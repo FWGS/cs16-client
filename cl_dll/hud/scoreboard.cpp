@@ -185,7 +185,9 @@ void CHudScoreboard :: InitHUDData( void )
 		g_PlayerExtraInfo[i].sb_account = -1;
 	}
 
-	m_iFlags &= ~HUD_DRAW;  // starts out inactive
+	// always active, ShouldDrawScoreboard() decides: it used to wait for the first ScoreInfo of the server, and on
+	// servers that never send it (their own score systems) Tab did nothing
+	m_iFlags |= HUD_DRAW;
 
 	m_iFlags |= HUD_INTERMISSION; // is always drawn during an intermission
 }

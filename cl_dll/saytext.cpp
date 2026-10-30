@@ -77,6 +77,8 @@ int CHudSayText :: Init( void )
 	m_HUD_saytext =			gEngfuncs.pfnRegisterVariable( "hud_saytext_internal", "1", 0 );
 	m_HUD_saytext_time =	gEngfuncs.pfnRegisterVariable( "hud_saytext_time", "5", 0 );
 	m_HUD_saytext_console =	gEngfuncs.pfnRegisterVariable( "hud_saytext_console", "1", 0 );
+	// the sound of a new message of the chat (misc/talk.wav of Half-Life): the Steam version of CS has none, 1 - on
+	m_HUD_saytext_sound = gEngfuncs.pfnRegisterVariable( "hud_saytext_sound", "0", FCVAR_ARCHIVE );
 
 	m_iFlags |= HUD_INTERMISSION; // is always drawn during an intermission
 
@@ -357,7 +359,16 @@ void CHudSayText :: SayTextPrint( const char *pszBuf, int iBufSize, int clientIn
 	{
 		// Print it straight to the console
 		char szConsoleText[ MAX_CHARS_PER_LINE ];
-		StripSayTextControlCodes( pszBuf, szConsoleText, sizeof( szConsoleText ) );
+		StripSayTextControlCodes( pszBuf, szConsoleText, sizeof( szConsoleText ) - 1 );
+
+		// every message is a line of its own in the console: the messages of the plugins (client_print_color
+		// and the like) come without a line end, and the next text of the console was glued to them
+		const size_t len = strlen( szConsoleText );
+		if( len > 0 && szConsoleText[len - 1] != '\n' )
+		{
+			szConsoleText[len] = '\n';
+			szConsoleText[len + 1] = '\0';
+		}
 		ConsolePrint( szConsoleText );
 	}
 
@@ -401,6 +412,10 @@ void CHudSayText :: SayTextPrint( const char *pszBuf, int iBufSize, int clientIn
 
 	strlcpy( g_szLineBuffer[i], pszBuf, sizeof( g_szLineBuffer[i] ) );
 
+	// the line end of the message is not a line of the chat
+	for( size_t n = strlen( g_szLineBuffer[i] ); n > 0 && ( g_szLineBuffer[i][n - 1] == '\n' || g_szLineBuffer[i][n - 1] == '\r' ); --n )
+		g_szLineBuffer[i][n - 1] = 0;
+
 	// make sure the text fits in one line
 	EnsureTextFitsInOneLineAndWrapIfHaveTo( i );
 
@@ -411,7 +426,8 @@ void CHudSayText :: SayTextPrint( const char *pszBuf, int iBufSize, int clientIn
 	}
 
 	m_iFlags |= HUD_DRAW;
-	PlaySound( "misc/talk.wav", 1 );
+	if( m_HUD_saytext_sound && m_HUD_saytext_sound->value )
+		PlaySound( "misc/talk.wav", 1 );
 
 	if( !g_iUser1 )
 	{

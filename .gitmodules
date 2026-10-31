@@ -3,7 +3,7 @@
 	url = https://github.com/yapb/yapb
 [submodule "3rdparty/mainui_cpp"]
 	path = 3rdparty/mainui_cpp
-	url = https://github.com/Velaron/mainui_cpp
+	url = https://github.com/FWGS/mainui_cpp
 [submodule "3rdparty/ReGameDLL_CS"]
 	path = 3rdparty/ReGameDLL_CS
 	url = https://github.com/Velaron/ReGameDLL_CS

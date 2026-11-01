@@ -61,7 +61,7 @@ jobs:
     name: PS Vita
     runs-on: ubuntu-latest
     env:
-      VITASDK: ${{ github.homedir }}/vitasdk
+      VITASDK: ${{ github.workspace }}/vitasdk
     steps:
       - name: Checkout sources
         uses: actions/checkout@v5

@@ -23,13 +23,13 @@ jobs:
           sudo apt-get update
           sudo apt-get install ccache
       - name: Setup Java
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v6
         with:
           java-version: 21
           distribution: 'temurin'
           cache: gradle
       - name: Setup compilation cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ccache
           key: Android-ccache-${{ github.sha }}
@@ -53,7 +53,7 @@ jobs:
           fi
         working-directory: android
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: Android
           path: android/CS16Client-Android.apk
@@ -76,7 +76,7 @@ jobs:
             ninja-build libfontconfig-dev ccache
       - name: Setup VitaSDK cache
         id: cache-vitasdk
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.VITASDK }}
           key: VitaSDK-cache-${{ hashFiles('scripts/psvita_sdk.sh') }}
@@ -88,7 +88,7 @@ jobs:
         run: |
           scripts/psvita_sdk.sh
       - name: Setup compilation cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ~/.cache/ccache
           key: PSVita-ccache-${{ github.sha }}
@@ -110,7 +110,7 @@ jobs:
           cmake --build . --parallel $(nproc)
           cpack --config CPackConfig.cmake
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: PSVita
           path: build/*.zip
@@ -139,7 +139,7 @@ jobs:
         if: matrix.arch == 'x86'
         run: bash scripts/setup_yy_thunks.sh
       - name: Setup compilation cache
-        uses: actions/cache@v4
+        uses: actions/cache@v6
         with:
           path: ${{ env.SCCACHE_DIR }}
           key: sccache-${{ runner.os }}-${{ matrix.arch }}-${{ github.sha }}
@@ -156,7 +156,7 @@ jobs:
           cpack --config CPackConfig.cmake
         working-directory: build
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ runner.os }}-${{ matrix.arch }}
           path: build/*.zip
@@ -183,7 +183,7 @@ jobs:
             libstdc++6:i386 gcc-multilib g++-multilib \
             ninja-build libfontconfig-dev:i386 libfontconfig-dev ccache
       - name: Setup compilation cache
-        uses: hendrikmuhs/ccache-action@v1.2
+        uses: hendrikmuhs/ccache-action@v1.2.24
         with:
           key: ${{ runner.os }}-${{ matrix.arch }}-ccache-${{ github.sha }}
           restore-keys: |
@@ -197,7 +197,7 @@ jobs:
           cpack --config CPackConfig.cmake
         working-directory: build
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ runner.os }}-${{ matrix.arch }}
           path: build/*.tar.gz
@@ -225,7 +225,7 @@ jobs:
       - name: Install dependencies
         run: brew install cmake ninja fontconfig ccache
       - name: Setup compilation cache
-        uses: hendrikmuhs/ccache-action@v1.2
+        uses: hendrikmuhs/ccache-action@v1.2.24
         with:
           key: ${{ runner.os }}-${{ matrix.arch }}-ccache-${{ github.sha }}
           restore-keys: |
@@ -239,7 +239,7 @@ jobs:
           cpack --config CPackConfig.cmake
         working-directory: build
       - name: Upload artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: ${{ runner.os }}-${{ matrix.arch }}
           path: build/*.zip
@@ -250,7 +250,7 @@ jobs:
     needs: [ android, windows, linux, psvita, macos ]
     steps:
       - name: Fetch artifacts
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@v8
         with:
           merge-multiple: true
       - name: Remove old release

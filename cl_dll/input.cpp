@@ -367,6 +367,10 @@ Return 1 to allow engine to process the key, otherwise, act on it as needed
 */
 int DLLEXPORT HUD_Key_Event( int down, int keynum, const char *pszCurrentBinding )
 {
+	// the wheel scrolls the list of the players of the spectator menu
+	if( gHUD.m_SpectatorGui.KeyEvent( down, keynum ))
+		return 0;
+
 	if( g_pMenu )
 		g_pMenu->Key( keynum, down );
 

@@ -29,6 +29,14 @@
 #include "draw_util.h"
 #include "vgui_parser.h"
 #include "eventscripts.h"
+#include "scoreboard_layout.h"
+#include "spectator_layout.h"
+#include "text_utf8.h"
+
+#include <algorithm>
+#include <string>
+
+namespace { void FreeSteamScoreboardText(); }
 
 hud_player_info_t   g_PlayerInfoList[MAX_PLAYERS+1]; // player info from the engine
 extra_player_info_t	g_PlayerExtraInfo[MAX_PLAYERS+1]; // additional player info sent directly to the client dll
@@ -154,6 +162,8 @@ int CHudScoreboard :: Init( void )
 
 int CHudScoreboard :: VidInit( void )
 {
+	FreeSteamScoreboardText();
+
 	xstart = ScreenWidth * 0.125f;
 	xend = ScreenWidth - xstart;
 	ystart = 100;
@@ -188,6 +198,45 @@ void CHudScoreboard :: InitHUDData( void )
 	m_iFlags &= ~HUD_DRAW;  // starts out inactive
 
 	m_iFlags |= HUD_INTERMISSION; // is always drawn during an intermission
+	m_iFlags |= HUD_THINK; // follows the players who leave and come (see Think)
+	memset( m_bSlotUsed, 0, sizeof( m_bSlotUsed ));
+}
+
+// The team, the score and the rest of a slot belong to the player who had it. When he leaves, nothing of the server
+// says so to the client, and a player who takes the slot later was shown in the old team, with the old score, till
+// the server sent his own TeamInfo (on some servers only when he chose a team). Now a slot that empties is cleared,
+// and a player who comes without a team is among the spectators (as the server makes him: "UNASSIGNED"), as in the
+// Steam version.
+void CHudScoreboard :: Think( void )
+{
+	bool changed = false;
+
+	for( int i = 1; i <= MAX_PLAYERS; i++ )
+	{
+		hud_player_info_t info = {};
+		GetPlayerInfo( i, &info );
+		const bool used = info.name && info.name[0];
+
+		if( !used && m_bSlotUsed[i] )
+		{
+			memset( &g_PlayerExtraInfo[i], 0, sizeof( g_PlayerExtraInfo[i] ));
+			g_PlayerExtraInfo[i].sb_health = -1;
+			g_PlayerExtraInfo[i].sb_account = -1;
+			changed = true;
+		}
+		else if( used && !m_bSlotUsed[i] && gHUD.m_Teamplay && !g_PlayerExtraInfo[i].teamname[0] )
+		{
+			strncpy( g_PlayerExtraInfo[i].teamname, "SPECTATOR", MAX_TEAM_NAME );
+			g_PlayerExtraInfo[i].teamname[MAX_TEAM_NAME - 1] = 0;
+			g_PlayerExtraInfo[i].teamnumber = TEAM_UNASSIGNED;
+			changed = true;
+		}
+
+		m_bSlotUsed[i] = used;
+	}
+
+	if( changed )
+		RebuildTeams();
 }
 
 bool CHudScoreboard :: ShouldDrawScoreboard() const
@@ -202,6 +251,442 @@ bool CHudScoreboard :: ShouldDrawScoreboard() const
 		return true;
 
 	return false;
+}
+
+// Localize() gives the key itself if the strings of the game have no such record
+// (then the table shows "#Cstrike_HEALTH"), so a plain default is used in that case
+static const char *LocalizeOrDefault( const char *key, const char *fallback )
+{
+	const char *text = Localize( key );
+
+	if( !text || text == key || text[0] == '#' )
+		return fallback;
+
+	return text;
+}
+
+//
+// The table as in the Steam version (see scoreboard_layout.h), drawn by the fonts of Windows.
+// Without them (or for "showscoreboard2") the old table below is drawn.
+//
+namespace {
+
+enum
+{
+	PT_NAME = 0,
+	PT_ATTRIB,
+	PT_HP,
+	PT_MONEY,
+	PT_SCORE,
+	PT_DEATHS,
+	PT_PING,
+	PT_COUNT
+};
+
+enum
+{
+	TT_NAME = 0,
+	TT_SCORE,
+	TT_PING,
+	TT_COUNT
+};
+
+const int SB_MAX_SECTIONS = 8;
+
+CTextTexture g_sbTitle;
+CTextTexture g_sbHead[SbLayout::NUM_COLUMNS];
+CTextTexture g_sbTeam[SB_MAX_SECTIONS][TT_COUNT];
+CTextTexture g_sbPlayer[MAX_PLAYERS + 1][PT_COUNT];
+
+void FreeSteamScoreboardText()
+{
+	g_sbTitle.Free();
+
+	for( CTextTexture &t : g_sbHead )
+		t.Free();
+
+	for( auto &section : g_sbTeam )
+		for( CTextTexture &t : section )
+			t.Free();
+
+	for( auto &player : g_sbPlayer )
+		for( CTextTexture &t : player )
+			t.Free();
+}
+
+// Draws a text of the scoreboard; x, capTop and maxWidth are in the units of the HUD.
+// Returns false if the fonts of Windows are not available.
+struct SbPainter
+{
+	float scale;
+	int em, emHud;
+	bool antialias;
+
+	bool Text( CTextTexture &tex, const std::string &utf8, int x, int capTop, int r, int g, int b,
+			   bool rightAligned, int maxWidth = 4096 ) const
+	{
+		if( !tex.Update( utf8, "Verdana", em, 600, antialias, (int)( maxWidth * scale )))
+			return false;
+
+		if( !tex.Valid() )
+			return true; // nothing to draw
+
+		const float w = tex.Width() / scale;
+		const float left = rightAligned ? x - w : (float)x;
+		const int top = SpecBar::CellTopFromCapTop( (float)capTop, emHud );
+
+		tex.Draw( left * scale, top * scale, r, g, b );
+		return true;
+	}
+};
+
+std::string NumberText( int value )
+{
+	char buf[32];
+	snprintf( buf, sizeof( buf ), "%d", value );
+	return buf;
+}
+
+} // namespace
+
+void CHudScoreboard :: Shutdown( void )
+{
+	FreeSteamScoreboardText();
+}
+
+bool CHudScoreboard :: DrawSteamStyle( void )
+{
+	const float scale = gHUD.m_flScale > 0.0f ? gHUD.m_flScale : 1.0f;
+	SbLayout::Layout l = SbLayout::Compute( ScreenWidth, ScreenHeight );
+	const SpecBar::Font font = SpecBar::FontFor( TrueHeight );
+
+	SbPainter paint;
+	paint.scale = scale;
+	paint.em = SpecBar::FontEm( font.tall );
+	paint.emHud = (int)( paint.em / scale + 0.5f );
+	paint.antialias = font.antialias;
+
+	const int headR = 255, headG = 176, headB = 0; // "BaseText"
+
+	// the name of the server: if the fonts of Windows can't draw it, the old table is drawn
+	const char *title = gHUD.m_szServerName[0] ? gHUD.m_szServerName : ( gHUD.m_Teamplay ? "TEAMS" : "PLAYERS" );
+	const std::string titleUtf8 = TextUtf::ToUtf8( title );
+
+	if( !g_sbTitle.Update( titleUtf8, "Verdana", paint.em, 600, paint.antialias, (int)( l.titleMaxW * scale )))
+		return false;
+
+	// the teams in the order of drawing: the most frags first, the spectators at the end
+	int order[SB_MAX_SECTIONS];
+	int sections = 0;
+	int players = 0;
+
+	if( gHUD.m_Teamplay )
+	{
+		// the scores of the teams (the same as the old table)
+		for( int i = 1; i <= m_iNumTeams; i++ )
+		{
+			if( !g_TeamInfo[i].scores_overriden )
+				g_TeamInfo[i].frags = g_TeamInfo[i].deaths = 0;
+			g_TeamInfo[i].sumping = 0;
+			g_TeamInfo[i].players = 0;
+			g_TeamInfo[i].already_drawn = FALSE;
+		}
+
+		for( int i = 1; i < MAX_PLAYERS; i++ )
+		{
+			if( !g_PlayerInfoList[i].name || !g_PlayerInfoList[i].name[0] || !g_PlayerExtraInfo[i].teamname[0] )
+				continue;
+
+			int j;
+			for( j = 1; j <= m_iNumTeams; j++ )
+				if( !stricmp( g_PlayerExtraInfo[i].teamname, g_TeamInfo[j].name ))
+					break;
+
+			if( j > m_iNumTeams )
+				continue;
+
+			if( !g_TeamInfo[j].scores_overriden )
+			{
+				g_TeamInfo[j].frags += g_PlayerExtraInfo[i].frags;
+				g_TeamInfo[j].deaths += g_PlayerExtraInfo[i].deaths;
+			}
+
+			g_TeamInfo[j].sumping += g_PlayerInfoList[i].ping;
+			g_TeamInfo[j].ownteam = g_PlayerInfoList[i].thisplayer ? TRUE : FALSE;
+			g_TeamInfo[j].players++;
+		}
+
+		// as in the Steam version: the terrorists, the counter-terrorists, other teams (the most frags first),
+		// the spectators at the end
+		while( sections < SB_MAX_SECTIONS )
+		{
+			int best = 0, spectators = 0, terrorists = 0, cts = 0;
+			int highest_frags = -99999, lowest_deaths = 99999;
+
+			for( int i = 1; i <= m_iNumTeams; i++ )
+			{
+				if( g_TeamInfo[i].players <= 0 || g_TeamInfo[i].already_drawn )
+					continue;
+
+				if( !strnicmp( g_TeamInfo[i].name, "SPECTATOR", MAX_TEAM_NAME ))
+				{
+					spectators = i;
+					continue;
+				}
+
+				if( g_TeamInfo[i].teamnumber == TEAM_TERRORIST && !terrorists )
+					terrorists = i;
+				else if( g_TeamInfo[i].teamnumber == TEAM_CT && !cts )
+					cts = i;
+
+				if( g_TeamInfo[i].frags > highest_frags
+					|| ( g_TeamInfo[i].frags == highest_frags && g_TeamInfo[i].deaths < lowest_deaths ))
+				{
+					best = i;
+					highest_frags = g_TeamInfo[i].frags;
+					lowest_deaths = g_TeamInfo[i].deaths;
+				}
+			}
+
+			if( terrorists )
+				best = terrorists;
+			else if( cts )
+				best = cts;
+
+			if( !best )
+				best = spectators;
+
+			if( !best )
+				break;
+
+			g_TeamInfo[best].already_drawn = TRUE;
+			order[sections++] = best;
+			players += g_TeamInfo[best].players;
+		}
+	}
+
+	// the players who are not in a team (all the players if it is not team play)
+	for( int i = 1; i < MAX_PLAYERS; i++ )
+		if( g_PlayerInfoList[i].name && g_PlayerInfoList[i].name[0] && ( !gHUD.m_Teamplay || !g_PlayerExtraInfo[i].teamname[0] ))
+			players++;
+
+	// the window grows (and the rows get lower) to show all the players
+	const int capHeight = (int)( paint.em * 0.727f / scale + 0.5f );
+	SbLayout::Fit( l, ScreenHeight, sections, players, capHeight );
+
+	// what the local player may see: a spectator has no columns of HP and Money; the bomb is shown to the
+	// terrorists, the defuse kits to the counter-terrorists (and both to the spectators)
+	const int localTeam = ( m_iPlayerNum > 0 && m_iPlayerNum <= MAX_PLAYERS ) ? g_PlayerExtraInfo[m_iPlayerNum].teamnumber : TEAM_UNASSIGNED;
+	const bool localSpectator = localTeam != TEAM_TERRORIST && localTeam != TEAM_CT && gHUD.m_Teamplay;
+	const bool moneyColumns = !localSpectator;
+	const bool seeBomb = localTeam != TEAM_CT;
+	const bool seeKits = localTeam != TEAM_TERRORIST;
+	const int statusX = moneyColumns ? l.statusX : l.statusXNoMoney;
+
+	// the window: "ListBG", the left column and the top row of it are half covered
+	DrawUtils::FillRoundedRect( l.bgX, l.bgY, l.bgW, l.bgH, l.radius, true, true, 0, 0, 0, 128 );
+	FillRGBABlend( l.panelX, l.bgY + l.radius, 1, l.bgH - l.radius * 2, 0, 0, 0, 64 );
+	FillRGBABlend( l.bgX + l.radius, l.panelY, l.bgW - l.radius * 2, 1, 0, 0, 0, 64 );
+
+	// the headers
+	paint.Text( g_sbTitle, titleUtf8, l.titleX, l.titleCapTop, headR, headG, headB, false, l.titleMaxW );
+
+	const char *const heads[SbLayout::NUM_COLUMNS] =
+	{
+		LocalizeOrDefault( "#Cstrike_HEALTH", "HP" ),
+		LocalizeOrDefault( "#Cstrike_ACCOUNT", "Money" ),
+		LocalizeOrDefault( "#PlayerScore", "Score" ),
+		LocalizeOrDefault( "#PlayerDeath", "Deaths" ),
+		LocalizeOrDefault( "#PlayerPing", "Latency" ),
+	};
+
+	for( int i = 0; i < SbLayout::NUM_COLUMNS; ++i )
+	{
+		const bool hidden = !moneyColumns && ( i == SbLayout::COL_HP || i == SbLayout::COL_MONEY );
+		paint.Text( g_sbHead[i], hidden ? "" : TextUtf::ToUtf8( heads[i] ), l.colRight[i], l.headCapTop, headR, headG, headB, true );
+	}
+
+	// the line under the headers: "BorderDark"
+	FillRGBABlend( l.lineX, l.headLineY, l.lineW, 1, 188, 112, 0, 128 );
+
+	int sectionTop = l.headLineY;
+	bool full = false;
+
+	// draws the players of a team (or all the players who have no team if team is NULL)
+	auto drawPlayers = [&]( const char *team, bool spectators, int y ) -> int
+	{
+		int list[MAX_PLAYERS + 1];
+		int count = 0;
+
+		for( int i = 1; i < MAX_PLAYERS; i++ )
+		{
+			if( !g_PlayerInfoList[i].name || !g_PlayerInfoList[i].name[0] )
+				continue;
+
+			// without a team: in team play only the players who have no team, else all of them
+			if( team ? stricmp( g_PlayerExtraInfo[i].teamname, team ) != 0 : ( gHUD.m_Teamplay && g_PlayerExtraInfo[i].teamname[0] != 0 ))
+				continue;
+
+			list[count++] = i;
+		}
+
+		// the most frags first, then the fewest deaths
+		std::stable_sort( list, list + count, []( int a, int b )
+		{
+			if( g_PlayerExtraInfo[a].frags != g_PlayerExtraInfo[b].frags )
+				return g_PlayerExtraInfo[a].frags > g_PlayerExtraInfo[b].frags;
+			return g_PlayerExtraInfo[a].deaths < g_PlayerExtraInfo[b].deaths;
+		});
+
+		for( int n = 0; n < count; ++n )
+		{
+			if( y + l.rowH > l.bottom )
+			{
+				full = true;
+				break;
+			}
+
+			const int idx = list[n];
+			hud_player_info_t *pl_info = &g_PlayerInfoList[idx];
+			extra_player_info_t *extra = &g_PlayerExtraInfo[idx];
+			CTextTexture *tex = g_sbPlayer[idx];
+
+			const float *colors = GetClientColor( idx );
+			const int r = (int)( 255 * colors[0] ), g = (int)( 255 * colors[1] ), b = (int)( 255 * colors[2] );
+
+			if( pl_info->thisplayer )
+				FillRGBABlend( l.litX, y, l.litW, l.rowH, 255, 255, 255, 26 );
+
+			const int capTop = y + l.rowCapTop;
+
+			paint.Text( tex[PT_NAME], TextUtf::ToUtf8( pl_info->name ), l.nameX, capTop, r, g, b, false,
+						statusX - l.nameX - (int)( 4 * l.u ));
+
+			// the status, left aligned (the old keys of the strings of the game, "D. Kit" as in the Steam version)
+			const char *attrib = "";
+
+			if( cl_showplayerversion->value != 0.0f )
+				attrib = gEngfuncs.PlayerInfo_ValueForKey( idx, "cscl_ver" );
+			else if( !spectators && team )
+			{
+				if( extra->dead )
+					attrib = LocalizeOrDefault( "#Cstrike_DEAD", "Dead" );
+				else if( extra->has_c4 && seeBomb )
+					attrib = LocalizeOrDefault( "#Cstrike_BOMB", "Bomb" );
+				else if( extra->vip )
+					attrib = LocalizeOrDefault( "#Cstrike_VIP", "VIP" );
+				else if( extra->has_defuse_kit && seeKits )
+					attrib = LocalizeOrDefault( "#Cstrike_DEFUSE_KIT", "D. Kit" );
+			}
+
+			paint.Text( tex[PT_ATTRIB], TextUtf::ToUtf8( attrib ? attrib : "" ), statusX, capTop, r, g, b, false,
+						l.colRight[SbLayout::COL_SCORE] - statusX );
+
+			// HP and Money: not for the spectators (neither in their rows nor in their table)
+			std::string hp, money;
+
+			if( moneyColumns && !spectators && extra->sb_health >= 0 && !extra->dead && gHUD.m_pShowHealth->value )
+				hp = NumberText( extra->sb_health );
+
+			if( moneyColumns && !spectators && extra->sb_account >= 0 && gHUD.m_pShowMoney->value )
+				money = "$" + NumberText( extra->sb_account );
+
+			paint.Text( tex[PT_HP], hp, l.colRight[SbLayout::COL_HP], capTop, r, g, b, true );
+			paint.Text( tex[PT_MONEY], money, l.colRight[SbLayout::COL_MONEY], capTop, r, g, b, true );
+
+			const bool scores = team && !spectators;
+			paint.Text( tex[PT_SCORE], scores ? NumberText( extra->frags ) : "", l.colRight[SbLayout::COL_SCORE], capTop, r, g, b, true );
+			paint.Text( tex[PT_DEATHS], scores ? NumberText( extra->deaths ) : "", l.colRight[SbLayout::COL_DEATHS], capTop, r, g, b, true );
+
+			const char *bot;
+			std::string ping;
+
+			if( pl_info->ping <= 5  // must be 0, until Xash's bug not fixed
+				&& ( bot = gEngfuncs.PlayerInfo_ValueForKey( idx, "*bot" )) && atoi( bot ) > 0 )
+				ping = "BOT";
+			else
+				ping = NumberText( pl_info->ping );
+
+			paint.Text( tex[PT_PING], ping, l.colRight[SbLayout::COL_PING], capTop, r, g, b, true );
+
+			y += l.rowH;
+		}
+
+		return y;
+	};
+
+	if( !gHUD.m_Teamplay )
+	{
+		drawPlayers( NULL, false, sectionTop + l.teamRows );
+		return true;
+	}
+
+	for( int section = 0; section < sections && !full; section++ )
+	{
+		team_info_t *team_info = &g_TeamInfo[order[section]];
+
+		if( sectionTop + l.teamRows + l.rowH > l.bottom )
+			break;
+
+		int r, g, b;
+		GetTeamColor( r, g, b, team_info->teamnumber );
+
+		char numPlayers[16];
+		snprintf( numPlayers, sizeof( numPlayers ), "%d", team_info->players );
+
+		char fmtString[32];
+		const char *fmtStringName = team_info->players == 1 ? "#Cstrike_ScoreBoard_Player" : "#Cstrike_ScoreBoard_Players";
+		strncpy( fmtString, Localize( fmtStringName ), sizeof( fmtString ));
+		fmtString[sizeof( fmtString ) - 1] = 0;
+
+		if( !strcmp( fmtString, fmtStringName ))
+		{
+			const char *fallback = team_info->players == 1 ? "%s1    -   %s2 player" : "%s1    -   %s2 players";
+			strncpy( fmtString, fallback, sizeof( fmtString ));
+			fmtString[sizeof( fmtString ) - 1] = 0;
+		}
+
+		char teamName[64] = "";
+		const bool isSpectators = team_info->teamnumber == TEAM_SPECTATOR || team_info->teamnumber == TEAM_UNASSIGNED;
+
+		if( team_info->teamnumber == TEAM_TERRORIST || team_info->teamnumber == TEAM_CT )
+		{
+			const char *args[2] = { Localize( team_info->teamnumber == TEAM_CT ? "#Cstrike_ScoreBoard_CT" : "#Cstrike_ScoreBoard_Ter" ), numPlayers };
+			Localize_Format( teamName, sizeof( teamName ), fmtString, args, 2 );
+		}
+		else if( isSpectators )
+		{
+			strncpy( teamName, Localize( "#Spectators" ), sizeof( teamName ));
+			teamName[sizeof( teamName ) - 1] = 0;
+		}
+		else
+		{
+			strncpy( teamName, team_info->name, sizeof( teamName ));
+			teamName[sizeof( teamName ) - 1] = 0;
+		}
+
+		CTextTexture *tex = g_sbTeam[section];
+		const int capTop = sectionTop + l.teamCapTop;
+
+		paint.Text( tex[TT_NAME], TextUtf::ToUtf8( teamName ), l.nameX, capTop, r, g, b, false,
+					l.colRight[SbLayout::COL_HP] - l.nameX );
+		paint.Text( tex[TT_SCORE], isSpectators ? "" : NumberText( team_info->frags ), l.colRight[SbLayout::COL_SCORE], capTop, r, g, b, true );
+		// the average ping of a team only if it is above 0 (as in the Steam version), none for the spectators
+		const int avgPing = team_info->players > 0 ? team_info->sumping / team_info->players : 0;
+		paint.Text( tex[TT_PING], ( isSpectators || avgPing <= 0 ) ? "" : NumberText( avgPing ), l.colRight[SbLayout::COL_PING], capTop, r, g, b, true );
+
+		// the line of the team: its colour, 1 pixel
+		FillRGBABlend( l.lineX, sectionTop + l.teamLineY, l.lineW, 1, r, g, b, 255 );
+
+		// the next team starts 2 pixels higher than the end of the rows (its capitals 15 pixels below them)
+		sectionTop = drawPlayers( team_info->name, isSpectators, sectionTop + l.teamRows ) - 2;
+	}
+
+	// the players who are not in a team
+	if( !full )
+		drawPlayers( NULL, false, sections > 0 ? sectionTop + 2 : sectionTop + l.teamRows );
+
+	return true;
 }
 
 // Y positions
@@ -247,6 +732,10 @@ int CHudScoreboard :: Draw( float flTime )
 int CHudScoreboard :: DrawScoreboard( float fTime )
 {
 	GetAllPlayersInfo();
+
+	if( !m_bForceDraw && DrawSteamStyle() )
+		return 1;
+
 	char ServerName[90];
 
 //	Packetloss removed on Kelly 'shipping nazi' Bailey's orders
@@ -269,10 +758,10 @@ int CHudScoreboard :: DrawScoreboard( float fTime )
 	g_Columns[COL_KILLS] = Column( g_Columns[COL_DEATHS].end - 10, Localize( "#PlayerScore" ) );
 	g_Columns[COL_KILLS].end = min( g_Columns[COL_KILLS].end, g_Columns[COL_KILLS].start - DrawUtils::HudStringLen( "9999" ) );
 
-	g_Columns[COL_MONEY] = Column( g_Columns[COL_KILLS].end - 10, Localize( "#Cstrike_ACCOUNT" ) );
+	g_Columns[COL_MONEY] = Column( g_Columns[COL_KILLS].end - 10, LocalizeOrDefault( "#Cstrike_ACCOUNT", "Money" ) );
 	g_Columns[COL_MONEY].end = min( g_Columns[COL_MONEY].end, g_Columns[COL_MONEY].start - DrawUtils::HudStringLen( "$999999" ) );
 
-	g_Columns[COL_HP] = Column( g_Columns[COL_MONEY].end - 10, Localize( "#Cstrike_HEALTH" ) );
+	g_Columns[COL_HP] = Column( g_Columns[COL_MONEY].end - 10, LocalizeOrDefault( "#Cstrike_HEALTH", "HP" ) );
 	g_Columns[COL_HP].end = min( g_Columns[COL_HP].end, g_Columns[COL_HP].start - DrawUtils::HudStringLen( "999999" ) );
 
 	g_Columns[COL_ATTRIB] = Column( g_Columns[COL_HP].end - 10 );
@@ -283,7 +772,13 @@ int CHudScoreboard :: DrawScoreboard( float fTime )
 
 	// print the heading line
 
-	DrawUtils::DrawRectangle(xstart, ystart, xend - xstart, yend - ystart,
+	// the frame has rounded corners, the same as the MOTD window: 14 pixels on a big screen
+	// (as measured on the Steam version), smaller on a small one, like in the Steam version
+	int cornerRadius = (int)( 14.0f * min( 1.0f, ScreenHeight / 1017.0f ) + 0.5f );
+	if( cornerRadius < 6 )
+		cornerRadius = 6;
+
+	DrawUtils::DrawRoundedRectangle(xstart, ystart, xend - xstart, yend - ystart, cornerRadius,
 		m_colors.r, m_colors.g, m_colors.b, m_colors.a, m_bDrawStroke);
 
 	int ypos = ystart + (list_slot * ROW_GAP) + 5;
@@ -677,7 +1172,13 @@ int CHudScoreboard :: MsgFunc_TeamInfo( const char *pszName, int iSize, void *pb
 		g_PlayerExtraInfo[cl].teamnumber = teamNumber;
 	}
 
-	// rebuild the list of teams
+	RebuildTeams();
+	return 1;
+}
+
+// the list of teams from the teams of the players
+void CHudScoreboard :: RebuildTeams( void )
+{
 
 	// clear out player counts from teams
 	for ( int i = 1; i <= m_iNumTeams; i++ )
@@ -734,8 +1235,6 @@ int CHudScoreboard :: MsgFunc_TeamInfo( const char *pszName, int iSize, void *pb
 		if ( g_TeamInfo[i].players < 1 )
 			memset( &g_TeamInfo[i], 0, sizeof(team_info_t) );
 	}
-
-	return 1;
 }
 
 // Message handler for TeamScore message

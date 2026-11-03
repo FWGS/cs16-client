@@ -33,6 +33,7 @@ version.
 #include "triangleapi.h"
 #include <string.h>
 #include <ctype.h>
+#include <math.h>
 #include "utflib.h"
 #include "utlvector.h"
 
@@ -374,6 +375,111 @@ int DrawUtils::DrawHudNumber2( int x, int y, int iNumber, int r, int g, int b )
 	} while ( iNumber > 0 );
 
 	return ResX;
+}
+
+// How far the rounded corner is from the side of the rectangle in the row i (0 is the outermost row)
+static int RoundedInset( int radius, int i )
+{
+	const float dy = radius - i - 0.5f;
+	return radius - (int)( sqrtf( (float)( radius * radius ) - dy * dy ) + 0.5f );
+}
+
+// Blended rectangle made of 1 pixel rows; the upper and/or the lower corners are rounded
+void DrawUtils::FillRoundedRect( int x, int y, int wide, int tall, int radius, bool roundTop, bool roundBottom,
+								 int r, int g, int b, int a )
+{
+	if( wide <= 0 || tall <= 0 )
+		return;
+
+	if( radius > wide / 2 ) radius = wide / 2;
+	if( radius > tall / 2 ) radius = tall / 2;
+	if( radius < 0 ) radius = 0;
+
+	const int rt = roundTop ? radius : 0;
+	const int rb = roundBottom ? radius : 0;
+
+	FillRGBABlend( x, y + rt, wide, tall - rt - rb, r, g, b, a );
+
+	for( int i = 0; i < rt; ++i )
+	{
+		const int inset = RoundedInset( rt, i );
+		FillRGBABlend( x + inset, y + i, wide - inset * 2, 1, r, g, b, a );
+	}
+
+	for( int i = 0; i < rb; ++i )
+	{
+		const int inset = RoundedInset( rb, i );
+		FillRGBABlend( x + inset, y + tall - 1 - i, wide - inset * 2, 1, r, g, b, a );
+	}
+}
+
+// Blended rectangle made of 1 pixel rows; the corners on the left and/or on the right side are rounded
+void DrawUtils::FillRoundedRectSides( int x, int y, int wide, int tall, int radius, bool roundLeft, bool roundRight,
+									  int r, int g, int b, int a )
+{
+	if( wide <= 0 || tall <= 0 )
+		return;
+
+	if( radius > wide / 2 ) radius = wide / 2;
+	if( radius > tall / 2 ) radius = tall / 2;
+	if( radius < 0 ) radius = 0;
+
+	if( !roundLeft && !roundRight )
+		radius = 0;
+
+	FillRGBABlend( x, y + radius, wide, tall - radius * 2, r, g, b, a );
+
+	for( int i = 0; i < radius; ++i )
+	{
+		const int inset = RoundedInset( radius, i );
+		const int left = roundLeft ? inset : 0;
+		const int right = roundRight ? inset : 0;
+
+		FillRGBABlend( x + left, y + i, wide - left - right, 1, r, g, b, a );
+		FillRGBABlend( x + left, y + tall - 1 - i, wide - left - right, 1, r, g, b, a );
+	}
+}
+
+// Outline of a rectangle with rounded corners, 1 pixel thick, drawn without blending
+void DrawUtils::DrawRoundedFrame( int x, int y, int wide, int tall, int radius, int r, int g, int b, int a )
+{
+	if( wide <= 1 || tall <= 1 )
+		return;
+
+	if( radius > wide / 2 ) radius = wide / 2;
+	if( radius > tall / 2 ) radius = tall / 2;
+	if( radius < 0 ) radius = 0;
+
+	// straight sides between the corners
+	FillRGBA( x + radius, y,            wide - radius * 2, 1, r, g, b, a );
+	FillRGBA( x + radius, y + tall - 1, wide - radius * 2, 1, r, g, b, a );
+	FillRGBA( x,            y + radius, 1, tall - radius * 2, r, g, b, a );
+	FillRGBA( x + wide - 1, y + radius, 1, tall - radius * 2, r, g, b, a );
+
+	// corners: in every row a short piece, so the line has no gaps
+	int prevInset = radius;
+
+	for( int i = 0; i < radius; ++i )
+	{
+		const int inset = RoundedInset( radius, i );
+		const int runEnd = ( prevInset - 1 > inset ) ? prevInset - 1 : inset;
+		const int len = runEnd - inset + 1;
+
+		FillRGBA( x + inset,                y + i,                len, 1, r, g, b, a );
+		FillRGBA( x + wide - 1 - runEnd,    y + i,                len, 1, r, g, b, a );
+		FillRGBA( x + inset,                y + tall - 1 - i,     len, 1, r, g, b, a );
+		FillRGBA( x + wide - 1 - runEnd,    y + tall - 1 - i,     len, 1, r, g, b, a );
+
+		prevInset = inset;
+	}
+}
+
+void DrawUtils::DrawRoundedRectangle( int x, int y, int wide, int tall, int radius, int r, int g, int b, int a, bool drawStroke )
+{
+	FillRoundedRect( x, y, wide, tall, radius, true, true, r, g, b, a );
+
+	if( drawStroke )
+		DrawRoundedFrame( x, y, wide, tall, radius, 255, 140, 0, 255 ); // the colour of the stroke of DrawRectangle
 }
 
 void DrawUtils::Draw2DQuad( float x1, float y1, float x2, float y2 )

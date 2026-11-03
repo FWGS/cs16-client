@@ -329,6 +329,9 @@ public class MainActivity extends Activity {
         return hasData();
     }
 
+    /** Saytdagi ro'yxatdan qat'i nazar, o'yin ichidagi "Favorites" ning boshida doim turadigan serverlar. */
+    private static final String[] FAV_FIXED = { "212.47.58.89:27015", "212.47.58.40:27015" };
+
     /** O'yin ichidagi "Favorites" bo'limiga saytdagi serverlarni yozadi (cstrike/favorite_servers.lst). */
     private void writeFavorites() {
         try {
@@ -336,6 +339,8 @@ public class MainActivity extends Activity {
             if (sections == null) sections = new JSONArray();
             StringBuilder sb = new StringBuilder();
             java.util.HashSet<String> seen = new java.util.HashSet<String>();
+            // har doim "Favorites" da turadigan serverlar (egasining so'rovi) - saytdan ro'yxat kelmasa ham
+            for (String ip : FAV_FIXED) if (seen.add(ip)) sb.append(ip).append(" gs\n");
             for (int i = 0; i < sections.length(); i++) {
                 JSONObject s = sections.optJSONObject(i);
                 JSONArray list = s == null ? null : s.optJSONArray("servers");

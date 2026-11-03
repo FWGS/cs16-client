@@ -92,6 +92,7 @@ public class MainActivity extends Activity {
     private final Map<String, Bitmap> flags = new HashMap<String, Bitmap>();
     private String lang = "uz";
     private volatile boolean downloading = false;
+    private boolean retryPending = false;
     private ProgressBar dlBar;
     private TextView dlText;
     private JSONObject lastData;
@@ -111,6 +112,7 @@ public class MainActivity extends Activity {
                 {"refresh", "Yangilash", "Обновить", "Refresh"},
                 {"loading", "Serverlar yuklanmoqda...", "Загрузка серверов...", "Loading servers..."},
                 {"neterr", "Internetga ulanib bo'lmadi. Yangilash tugmasini bosing.", "Нет соединения. Нажмите «Обновить».", "No connection. Tap Refresh."},
+                {"sitedown", "Serverlar ro'yxati saytdan kelmadi - oxirgi ro'yxat ko'rsatilmoqda. O'ynash mumkin.", "Сайт со списком серверов недоступен - показан последний список. Играть можно.", "Server list site is unreachable - showing the last list. You can still play."},
                 {"empty", "Hozircha serverlar yo'q", "Пока нет серверов", "No servers yet"},
                 {"offline", "OFFLINE", "OFFLINE", "OFFLINE"},
                 {"setup", "O'yinni sozlash (bir marta)", "Настройка игры (один раз)", "Game setup (one time)"},
@@ -1137,6 +1139,24 @@ public class MainActivity extends Activity {
     }
 
     /** Sevimlilar bo'limi uchun: saytdagi jonli ma'lumot, bo'lmasa saqlangan nom. */
+    private static JSONObject fallbackServers() {
+        try {
+            JSONArray list = new JSONArray();
+            for (String ip : FAV_FIXED) {
+                JSONObject o = new JSONObject();
+                o.put("ip", ip); o.put("name", ip); o.put("online", true);
+                list.put(o);
+            }
+            JSONObject sec = new JSONObject();
+            sec.put("title", "Serverlar"); sec.put("key", "top"); sec.put("servers", list);
+            JSONObject d = new JSONObject();
+            d.put("sections", new JSONArray().put(sec));
+            return d;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
     private JSONObject findServer(String ip, String savedName) {
         JSONArray sections = lastData == null ? null : lastData.optJSONArray("sections");
         if (sections != null) for (int i = 0; i < sections.length(); i++) {
@@ -1386,10 +1406,21 @@ public class MainActivity extends Activity {
             @Override
             public void run() {
                 JSONObject data = null;
+                boolean cached = false;
                 try {
-                    data = new JSONObject(httpGet(SERVERS_URL + "?t=" + System.currentTimeMillis()));
+                    String body = httpGet(SERVERS_URL + "?t=" + System.currentTimeMillis());
+                    data = new JSONObject(body);
+                    prefs().edit().putString("srvcache", body).apply();   // sayt ishlamay qolsa - shu ro'yxat
                 } catch (Exception ignored) {
                 }
+                /* sayt javob bermadi (internet bor, lekin boost-top serveri o'chiq bo'lishi mumkin): oxirgi saqlangan ro'yxat,
+                 * u ham bo'lmasa - doimiy serverlar. O'yin serverlari saytdan alohida ishlaydi - o'ynash mumkin */
+                if (data == null && lastData == null) {
+                    try { data = new JSONObject(prefs().getString("srvcache", "")); } catch (Exception ignored) {}
+                    if (data == null) data = fallbackServers();
+                    cached = true;
+                }
+                final boolean failed = data == null || cached;
                 final JSONObject d = data;
                 runOnUiThread(new Runnable() {
                     @Override
@@ -1400,7 +1431,14 @@ public class MainActivity extends Activity {
                             pings.clear();
                             measurePings();
                         }
-                        if (d == null && status != null) status.setText(t("neterr"));
+                        if (failed && status != null) status.setText(t(lastData != null ? "sitedown" : "neterr"));
+                        if (failed && !retryPending && content != null) {   // sayt qaytdimi - 45 soniyada qayta so'raymiz
+                            retryPending = true;
+                            content.postDelayed(new Runnable() {
+                                @Override
+                                public void run() { retryPending = false; if (!isFinishing() && !downloading) loadServers(); }
+                            }, 45000);
+                        }
                     }
                 });
             }

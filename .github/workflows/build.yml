@@ -18,6 +18,8 @@ jobs:
         uses: actions/checkout@v5
         with:
           repository: FWGS/xash3d-fwgs
+          # mahkamlangan versiya: dvijokning eng yangisi bizning XashActivity bilan mos kelmay qoldi (2026-11, util/Prefs)
+          ref: d6b54aaf6c1d8518e08404a842f3f6ee02cef3cc
           submodules: recursive
       - name: Install dependencies
         run: bash scripts/gha/deps_android.sh

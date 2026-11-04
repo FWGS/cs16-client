@@ -37,6 +37,7 @@
 #include "csprite.h"
 #include "cvardef.h"
 #include "utlstring.h"
+#include "hud/text_texture.h"
 
 #define MIN_ALPHA	 100	
 #define	HUDELEM_ACTIVE	1
@@ -765,6 +766,8 @@ public:
 	CHudMsgFunc(Money);
 	CHudMsgFunc(BlinkAcct);
 
+	int GetMoney( void ) const { return m_iMoneyCount; } // shown in the spectator bar
+
 private:
 	int m_iMoneyCount;
 	int m_iDelta;
@@ -910,6 +913,14 @@ private:
 class CHudSpectatorGui: public CHudBase
 {
 public:
+	static int BarHeight( void ); // the height of the black bars of the spectator mode (as in the Steam version)
+	void DrawStatusBar( void );   // the upper bar: scores, money and time (as in the Steam version)
+	void DrawSteamMenus( void );  // the menus at the bottom (as in the Steam version)
+	void FreeStatusBarText( void );
+
+	// the texts of the upper bar drawn by Windows fonts
+	CTextTexture m_txtCTLabel, m_txtTLabel, m_txtCTValue, m_txtTValue, m_txtInfo, m_txtTimer;
+
 	int Init();
 	int VidInit();
 	int Draw( float flTime );
@@ -924,6 +935,11 @@ public:
 	CHudUserCmd( ToggleSpectatorMenuOptions );
 	CHudUserCmd( ToggleSpectatorMenuOptionsSettings );
 	CHudUserCmd( ToggleSpectatorMenuSpectateOptions );
+	CHudUserCmd( ToggleSpectatorMenuPlayers );
+	CHudUserCmd( SpecFollowItem );
+	CHudUserCmd( SpecPlayersScroll );
+
+	bool KeyEvent( int down, int keynum ); // true if the key was used by the menus (the wheel scrolls the players)
 
 	void CalcAllNeededData( );
 
@@ -951,9 +967,25 @@ private:
 		ROOT_MENU = (1<<0),
 		MENU_OPTIONS = (1<<1),
 		MENU_OPTIONS_SETTINGS = (1<<2),
-		MENU_SPEC_OPTIONS = (1<<3)
+		MENU_SPEC_OPTIONS = (1<<3),
+		MENU_PLAYERS = (1<<4)
 	};
 	byte m_menuFlags;
+
+	// the list of the players (as the player list of the Steam version)
+	int m_iPlayers[MAX_PLAYERS + 1];
+	int m_iPlayerCount;
+	int m_iPlayerFirst;   // the first item seen
+	int m_iPlayerTouch;   // how many item buttons are made (-1: none)
+	int m_iPlayerTouchScroll; // the item buttons are made for a list with a scroll bar
+	int m_iSettingsW;     // the width of the "Settings" submenu (it is as wide as its texts)
+	bool m_bTouchClientOnly;
+
+	int BuildPlayerList( int *list );
+	void UpdatePlayerMenu( void );
+	void ClosePlayerMenu( void );
+	void SyncTouchMode( void );
+	void CloseOtherMenus( int keep );
 };
 
 //

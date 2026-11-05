@@ -110,12 +110,13 @@ int CHudMenu :: Draw( float flTime )
 
 	// center it
 	int y = (ScreenHeight/2) - ((nlc/2)*12) - 40; // make sure it is above the say text
-	int x = 20;
+	const int margin = 20;
+	int x = margin;
 
 	i = 0;
 	while ( i < MAX_MENU_STRING && g_szMenuString[i] != '\0' )
 	{
-		DrawUtils::DrawHudString( x, y, 320, g_szMenuString + i, 255, 255, 255 );
+		DrawUtils::DrawHudString( x, y, ScreenWidth - margin, g_szMenuString + i, 255, 255, 255 );
 		y += 24;
 
 		while ( i < MAX_MENU_STRING && g_szMenuString[i] != '\0' && g_szMenuString[i] != '\n' )

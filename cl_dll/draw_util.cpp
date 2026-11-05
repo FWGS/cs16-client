@@ -93,7 +93,6 @@ int Con_UtfProcessChar( int in )
 
 int DrawUtils::DrawHudString( int xpos, int ypos, int iMaxX, const char *str, int r, int g, int b, float scale )
 {
-	int first_xpos = xpos;
 	char *szIt = (char *)str;
 
 	Con_UtfProcessChar( 0 );
@@ -120,8 +119,7 @@ int DrawUtils::DrawHudString( int xpos, int ypos, int iMaxX, const char *str, in
 				UnpackRGB( r, g, b, RGB_GRAY );
 				continue;
 			case 'R':
-				xpos = iMaxX - gHUD.GetCharWidth( 'M' ) * 10;
-				++szIt;
+				return DrawHudStringReverse( ScreenWidth / 2, ypos, 0, szIt + 1, r, g, b, scale );
 			}
 		}
 		else if( IsColorString( szIt ) )
@@ -165,7 +163,7 @@ int DrawUtils::DrawHudStringReverse( int xpos, int ypos, int iMinX, const char *
 	Con_UtfProcessChar( 0 );
 
 	// 1. Forward pass to identify characters and their correct colors
-	for ( int i = 0; szString[i] != '\0'; )
+	for ( int i = 0; szString[i] != '\0' && szString[i] != '\n'; )
 	{
 		if ( szString[i] == '\\' && szString[i + 1] != 0 && szString[i + 1] != '\n' )
 		{

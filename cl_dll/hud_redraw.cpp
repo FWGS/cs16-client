@@ -115,6 +115,12 @@ int CHud :: Redraw( float flTime, int intermission )
 			}
 		}
 	}
+	else if( m_pCvarDraw->value )
+	{
+		// the server has hidden the whole HUD (HideWeapon with HIDEHUD_ALL): the table of the players is still
+		// shown with Tab, as the VGUI2 table of the Steam version (it is not a part of the HUD there)
+		m_Scoreboard.Draw( flTime );
+	}
 
 	// are we in demo mode? do we need to draw the logo in the top corner?
 	if (m_iLogo)

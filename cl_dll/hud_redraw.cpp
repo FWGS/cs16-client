@@ -23,6 +23,7 @@
 #include <string.h>
 
 #include "draw_util.h"
+#include "chrome/chrome_host.h"
 
 #define MAX_LOGO_FRAMES 56
 
@@ -152,6 +153,12 @@ int CHud :: Redraw( float flTime, int intermission )
 	}
 
 	g_accept_utf8 = !stricmp( cl_charset->string, "utf-8" );
+
+	Chrome::PresentMotd();
+
+	// the menus that waited for the MOTD window to be closed
+	extern void Menu_ShowAfterMotd( void );
+	Menu_ShowAfterMotd();
 
 	return 1;
 }

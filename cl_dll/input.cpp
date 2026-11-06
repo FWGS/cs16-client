@@ -12,6 +12,7 @@
 // Quake is a trademark of Id Software, Inc., (c) 1996 Id Software, Inc. All
 // rights reserved.
 #include "hud.h"
+#include "chrome/chrome_host.h"
 #include "cl_util.h"
 #include "camera.h"
 #include "kbutton.h"
@@ -367,6 +368,14 @@ Return 1 to allow engine to process the key, otherwise, act on it as needed
 */
 int DLLEXPORT HUD_Key_Event( int down, int keynum, const char *pszCurrentBinding )
 {
+	// keys that close the server MOTD window are not passed to the game
+	if( Chrome::HandleMotdKey( down, keynum ))
+		return 0;
+
+	// the wheel scrolls the list of the players of the spectator menu
+	if( gHUD.m_SpectatorGui.KeyEvent( down, keynum ))
+		return 0;
+
 	if( g_pMenu )
 		g_pMenu->Key( keynum, down );
 

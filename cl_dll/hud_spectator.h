@@ -77,6 +77,7 @@ public:
 	void HandleButtonsDown(int ButtonPressed);
 	void HandleButtonsUp(int ButtonPressed);
 	void FindNextPlayer( bool bReverse );
+	void FollowPlayer( int index ); // the player chosen in the list of the players
 	void DirectorMessage( int iSize, void *pbuf );
 	void SetSpectatorStartPosition();
 	CHudMsgFunc(Spectator);

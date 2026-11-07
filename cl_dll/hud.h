@@ -37,6 +37,10 @@
 #include "csprite.h"
 #include "cvardef.h"
 #include "utlstring.h"
+#include <string>
+#include <vector>
+#include "hud/tutor_logic.h"
+#include "hud/text_texture.h"
 
 #define MIN_ALPHA	 100	
 #define	HUDELEM_ACTIVE	1
@@ -765,6 +769,8 @@ public:
 	CHudMsgFunc(Money);
 	CHudMsgFunc(BlinkAcct);
 
+	int GetMoney( void ) const { return m_iMoneyCount; } // shown in the spectator bar
+
 private:
 	int m_iMoneyCount;
 	int m_iDelta;
@@ -886,6 +892,50 @@ private:
 //-----------------------------------------------------
 //
 
+// Tutor messages of the server (TutorText, TutorClose), see hud/tutor.cpp
+class CHudTutor : public CHudBase
+{
+public:
+	int Init( void );
+	int VidInit( void );
+	int Draw( float flTime );
+	void InitHUDData( void );
+
+	CHudMsgFunc(TutorText);
+	CHudMsgFunc(TutorClose);
+	CHudMsgFunc(TutorState);
+	CHudMsgFunc(TutorLine);
+
+private:
+	void Hide( void );
+	void FreeText( void );
+	void LoadResources( void );
+	void BuildText( int maxWidth );
+
+	cvar_t *cl_tutor;
+	cvar_t *cl_tutor_maxtime;
+
+	bool m_bShow;
+	int m_iType;
+	float m_flShownAt;
+	std::string m_szText;
+
+	Tutor::Scheme m_scheme;
+	bool m_bSchemeLoaded;
+	int m_iIconTex[Tutor::ICON_COUNT];
+	bool m_bIconTried[Tutor::ICON_COUNT];
+
+	CTextTexture m_text;     // the text in a Windows font (from its atlas)
+	bool m_bTextAtlas;       // m_text is used (else the lines in the font of the HUD)
+	int m_iTextW, m_iTextH;
+	bool m_bTextDirty;
+	std::vector<std::string> m_lines; // the text for the font of the HUD
+};
+
+//
+//-----------------------------------------------------
+//
+
 class CHudScenario : public CHudBase
 {
 public:
@@ -910,6 +960,14 @@ private:
 class CHudSpectatorGui: public CHudBase
 {
 public:
+	static int BarHeight( void ); // the height of the black bars of the spectator mode (as in the Steam version)
+	void DrawStatusBar( void );   // the upper bar: scores, money and time (as in the Steam version)
+	void DrawSteamMenus( void );  // the menus at the bottom (as in the Steam version)
+	void FreeStatusBarText( void );
+
+	// the texts of the upper bar drawn by Windows fonts
+	CTextTexture m_txtCTLabel, m_txtTLabel, m_txtCTValue, m_txtTValue, m_txtInfo, m_txtTimer;
+
 	int Init();
 	int VidInit();
 	int Draw( float flTime );
@@ -924,6 +982,11 @@ public:
 	CHudUserCmd( ToggleSpectatorMenuOptions );
 	CHudUserCmd( ToggleSpectatorMenuOptionsSettings );
 	CHudUserCmd( ToggleSpectatorMenuSpectateOptions );
+	CHudUserCmd( ToggleSpectatorMenuPlayers );
+	CHudUserCmd( SpecFollowItem );
+	CHudUserCmd( SpecPlayersScroll );
+
+	bool KeyEvent( int down, int keynum ); // true if the key was used by the menus (the wheel scrolls the players)
 
 	void CalcAllNeededData( );
 
@@ -951,9 +1014,25 @@ private:
 		ROOT_MENU = (1<<0),
 		MENU_OPTIONS = (1<<1),
 		MENU_OPTIONS_SETTINGS = (1<<2),
-		MENU_SPEC_OPTIONS = (1<<3)
+		MENU_SPEC_OPTIONS = (1<<3),
+		MENU_PLAYERS = (1<<4)
 	};
 	byte m_menuFlags;
+
+	// the list of the players (as the player list of the Steam version)
+	int m_iPlayers[MAX_PLAYERS + 1];
+	int m_iPlayerCount;
+	int m_iPlayerFirst;   // the first item seen
+	int m_iPlayerTouch;   // how many item buttons are made (-1: none)
+	int m_iPlayerTouchScroll; // the item buttons are made for a list with a scroll bar
+	int m_iSettingsW;     // the width of the "Settings" submenu (it is as wide as its texts)
+	bool m_bTouchClientOnly;
+
+	int BuildPlayerList( int *list );
+	void UpdatePlayerMenu( void );
+	void ClosePlayerMenu( void );
+	void SyncTouchMode( void );
+	void CloseOtherMenus( int keep );
 };
 
 //
@@ -1090,6 +1169,7 @@ public:
 	CHudRadar       m_Radar;
 	CHudSpectatorGui m_SpectatorGui;
 	CHudScenario	m_Scenario;
+	CHudTutor       m_Tutor;
 
 	// user messages
 	CHudMsgFunc(Damage);

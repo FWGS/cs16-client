@@ -423,6 +423,9 @@ void CHud :: Init( void )
 	if( GetGameType() != GAME_CZERODS )
 		m_SpectatorGui.Init();
 
+	// tutor messages of the server: over the spectator bars, under the scoreboard
+	m_Tutor.Init();
+
 	m_Scoreboard.Init();
 
 	GetClientVoice()->Init( &g_VoiceStatusHelper );

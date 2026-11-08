@@ -173,6 +173,112 @@ jobs:
           open(p, 'w', encoding='utf-8').write(s)
           print('cl_main.c patched (auto reconnect)')
           PY
+      - name: Patch yuklashda qotib qolish (fayl yo'q serverlar)
+        run: |
+          python3 - <<'PY'
+          p = 'engine/client/cl_main.c'
+          s = open(p, encoding='utf-8').read()
+          def must(a, b):
+              global s
+              assert s.count(a) == 1, ('not unique/missing', a[:80])
+              s = s.replace(a, b, 1)
+          must('CVAR_DEFINE_AUTO( cl_download_ingame, "1", FCVAR_ARCHIVE, "allow to downloading resources while client is active" );',
+               'CVAR_DEFINE_AUTO( cl_download_ingame, "1", FCVAR_ARCHIVE, "allow to downloading resources while client is active" );\n'
+               'static CVAR_DEFINE_AUTO( cl_dl_stuck, "20", FCVAR_ARCHIVE, "skip resource downloads that make no progress for N seconds (0 = never)" );')
+          must('\tCvar_RegisterVariable( &cl_download_ingame );',
+               '\tCvar_RegisterVariable( &cl_download_ingame );\n\tCvar_RegisterVariable( &cl_dl_stuck );')
+          must('''/*
+          ==================
+          Host_ClientFrame
+          ''', r'''/*
+          ==================
+          CL_BtDownloadWatchdog
+
+          boost-top: server fayl bera olmasa (fastdl yo'q / fayl yo'q) ba'zi fayllar
+          "kerakli" ro'yxatida abadiy qolib, "Downloading [N remaining]" da qotib qolinardi.
+          Yuklash cl_dl_stuck soniya siljimasa - qolgan fayllar o'tkazib yuboriladi
+          (kompyuterdagi CS 1.6 kabi), o'yin serverga kiraveradi.
+          ==================
+          */
+          static void CL_BtDownloadWatchdog( void )
+          {
+          	static double	stuck_since;
+          	static int	last_count = -1;
+          	static float	last_pct = -2.0f;
+          	resource_t	*p;
+          	float		pct;
+          	int		skipped = 0;
+
+          	if( cls.state == ca_disconnected || cls.state == ca_active || cls.demoplayback || cl_dl_stuck.value <= 0.0f
+          		|| !cl.resourcesneeded.pNext || cl.resourcesneeded.pNext == &cl.resourcesneeded )
+          	{
+          		last_count = -1;
+          		return;
+          	}
+
+          	pct = Cvar_VariableValue( "scr_download" );
+          	if( last_count != host.downloadcount || pct != last_pct )
+          	{
+          		last_count = host.downloadcount;
+          		last_pct = pct;
+          		stuck_since = host.realtime;
+          		return;
+          	}
+
+          	if( host.realtime - stuck_since < cl_dl_stuck.value )
+          		return;
+
+          	HTTP_ResetProcessState(); // navbatdagi http fayllar keyin qayta ro'yxatdan o'tkazmasin
+
+          	if( cls.netchan.tempbuffer )
+          		Mem_Free( cls.netchan.tempbuffer );
+          	cls.netchan.tempbuffer = NULL;
+          	cls.netchan.tempbuffersize = 0;
+
+          	while(( p = cl.resourcesneeded.pNext ) != &cl.resourcesneeded )
+          	{
+          		Con_Printf( S_WARN "skipped download: %s\n", p->szFileName );
+          		CL_MoveToOnHandList( p );
+          		skipped++;
+          	}
+          	Con_Printf( "Yuklab bo'lmagan %d ta fayl o'tkazib yuborildi, serverga kirilyapti...\n", skipped );
+
+          	host.downloadcount = 0;
+          	last_count = -1;
+          	Cvar_SetValue( "scr_download", -1.0f );
+
+          	{
+          		byte	msg_buf[MAX_INIT_MSG];
+          		sizebuf_t msg;
+
+          		MSG_Init( &msg, "Resource Registration", msg_buf, sizeof( msg_buf ));
+
+          		if( CL_PrecacheResources( ))
+          			CL_RegisterResources( &msg, cls.net_protocol );
+
+          		if( MSG_GetNumBytesWritten( &msg ) > 0 )
+          		{
+          			Netchan_CreateFragments( &cls.netchan, &msg );
+          			Netchan_FragSend( &cls.netchan );
+          		}
+          	}
+          }
+
+          /*
+          ==================
+          Host_ClientFrame
+          ''')
+          must('''	// procssing resources on handle
+          	while( CL_RequestMissingResources( ));
+          ''', '''	// procssing resources on handle
+          	while( CL_RequestMissingResources( ));
+
+          	// boost-top: qotib qolgan yuklashlarni o'tkazib yuborish
+          	CL_BtDownloadWatchdog();
+          ''')
+          open(p, 'w', encoding='utf-8').write(s)
+          print('cl_main.c patched (download watchdog)')
+          PY
       - name: Build engine
         run: bash scripts/gha/build_android.sh
       - name: Collect engine parts
@@ -255,6 +361,9 @@ jobs:
               'mp_decals "50"',
               'cl_timeout "25"',
               'cl_autoreconnect "1"',
+              "// server fayl bermasa qotib qolmaslik: 20 s siljimasa o'tkazib yuboriladi",
+              'cl_dl_stuck "20"',
+              'http_timeout "15"',
               'vibration_enable "1"',
               "// #34 dagi grafika buzilishini tuzatish (video.cfg da qolib ketgan qiymatlar)",
               'gl_texture_lodbias "0"',

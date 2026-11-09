@@ -88,3 +88,8 @@ if(MSVC)
 	install(FILES $<TARGET_PDB_FILE:${CLIENT_LIB}>
 		DESTINATION "${GAME_DIR}/${CLIENT_INSTALL_DIR}/" OPTIONAL)
 endif()
+
+if(WIN32)
+	# shell32: opening the MOTD in the browser of the system (hud/MOTD_browser.cpp)
+	target_link_libraries(${CLIENT_LIB} shell32)
+endif()

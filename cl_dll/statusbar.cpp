@@ -26,6 +26,8 @@
 #include <string.h>
 #include <stdio.h>
 #include "draw_util.h"
+#include "hud/spectator_layout.h"
+#include "hud/text_utf8.h"
 
 #define STATUSBAR_ID_LINE		0
 
@@ -93,6 +95,7 @@ void CHudStatusBar :: ParseStatusString( int line_num )
 	char *dst = m_szStatusBar[line_num];
 
 	char *src_start = src, *dst_start = dst;
+	bool afterLabel = false; // "Friend", "Enemy", "Hostage", "Health" was just put in: the Steam version has " : "
 
 	while ( *src != 0 )
 	{
@@ -117,6 +120,12 @@ void CHudStatusBar :: ParseStatusString( int line_num )
 			{
 				if ( *src != '%' )
 				{  // just copy the character
+					if( afterLabel && *src == ':' && ( dst - dst_start ) < MAX_STATUSTEXT_LENGTH - 1 )
+					{
+						*dst = ' ';
+						dst++;
+					}
+					afterLabel = false;
 					*dst = *src;
 					dst++, src++;
 				}
@@ -193,6 +202,8 @@ void CHudStatusBar :: ParseStatusString( int line_num )
 
 						for ( char *cp = szRepString; *cp != 0 && ((dst - dst_start) < MAX_STATUSTEXT_LENGTH); cp++, dst++ )
 							*dst = *cp;
+
+						afterLabel = ( valtype == 'c' || valtype == 'h' ) && szRepString[0];
 					}
 				}
 			}
@@ -227,6 +238,58 @@ int CHudStatusBar :: Draw( float fTime )
 	}
 
 	int Y_START = ScreenHeight - YRES(32 + 4);
+
+	// as in the Steam version (measured at 1920x1080): "Default" (Verdana, weight 600) from the atlas of the font with
+	// a black shadow of 1 pixel, the whole line in the colour of the player, its cell 30 units above the bottom
+	// of the screen (1012 at 1080), 7.1 units from the left edge (16 pixels); the font of the HUD without the fonts
+	// of Windows (or with hud_textmode 1)
+	if( DrawUtils::UseAtlasText() )
+	{
+		static CTextTexture lines[MAX_STATUSBAR_LINES];
+		const float scale = gHUD.m_flScale > 0.0f ? gHUD.m_flScale : 1.0f;
+		const SpecBar::Font font = SpecBar::FontFor( TrueHeight );
+		const int em = SpecBar::FontEm( font.tall );
+		bool drawn = true;
+
+		for( int i = 0; i < MAX_STATUSBAR_LINES && drawn; ++i )
+		{
+			if( !m_szStatusBar[i][0] )
+				continue;
+			drawn = lines[i].Update( TextUtf::ToUtf8( m_szStatusBar[i] ), "Verdana", em, 600, font.antialias ) && lines[i].Valid();
+		}
+
+		if( drawn )
+		{
+			const float u = ScreenHeight / 480.0f;
+			for( int i = 0; i < MAX_STATUSBAR_LINES; ++i )
+			{
+				if( !m_szStatusBar[i][0] )
+					continue;
+				empty = false;
+
+				const float lineH = lines[i].Height() / scale;
+				float x = 7.1f * u;
+				float y = ScreenHeight - 30.0f * u - lineH * i;
+
+				// let user set status ID bar centering
+				if ( i == STATUSBAR_ID_LINE && hud_centerid->value != 0.0f )
+				{
+					x = ( ScreenWidth - lines[i].Width() / scale ) / 2;
+					if( x < 2 )
+						x = 2;
+					y = ( ScreenHeight / 2 ) + lineH * hud_centerid->value;
+				}
+
+				const float *c = m_pflNameColors[i] ? m_pflNameColors[i] : (const float *)g_ColorYellow;
+				lines[i].Draw( x * scale + 1, y * scale + 1, 0, 0, 0, 255 );
+				lines[i].Draw( x * scale, y * scale, (int)( c[0] * 255.0f ), (int)( c[1] * 255.0f ), (int)( c[2] * 255.0f ), 255 );
+			}
+
+			if( empty )
+				m_iFlags &= ~HUD_DRAW;
+			return 1;
+		}
+	}
 
 	// Draw the status bar lines
 	for ( int i = 0; i < MAX_STATUSBAR_LINES; i++ )

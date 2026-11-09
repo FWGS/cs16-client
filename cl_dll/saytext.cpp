@@ -30,6 +30,9 @@
 #include "com_weapons.h"
 #include "utlstring.h"
 #include "strl.h"
+#include "hud/glyph_atlas.h"
+#include "hud/spectator_layout.h"
+#include "hud/text_utf8.h"
 //#include "vgui_TeamFortressViewport.h"
 
 extern float *GetClientColor( int clientIndex );
@@ -65,6 +68,108 @@ static float flScrollTime = 0;  // the time at which the lines next scroll up
 
 static int Y_START = 0;
 static int line_height = 0;
+
+// The chat as in the Steam version (measured on its screenshots at 1920x1080 and 720x480): the font "Default" of
+// resource/ClientScheme.res (Verdana, weight 600: 12 pixels without antialiasing up to 599 lines of the screen ...
+// 20 with it at 1080), from the atlas of the font, one texel on one pixel; the lines as high as the font (19 pixels
+// at 1080); a black shadow of 1 pixel. Without the fonts of Windows (or with
+// hud_textmode 1) the console font of the engine is used, as before.
+namespace ChatText {
+
+static float Scale( void )
+{
+	return gHUD.m_flScale > 0.0f ? gHUD.m_flScale : 1.0f; // pixels of the screen per unit of the HUD
+}
+
+static CGlyphFont *Font( void )
+{
+	if( !DrawUtils::UseAtlasText() )
+		return nullptr;
+
+	const SpecBar::Font font = SpecBar::FontFor( TrueHeight );
+	return CGlyphFont::Get( "Verdana", SpecBar::FontEm( font.tall ), 600, font.antialias );
+}
+
+// the bytes of one character at p: a UTF-8 sequence, or one byte of Windows-1251 if the text is not UTF-8
+static int CharLength( const char *p, bool utf8 )
+{
+	const unsigned char c = (unsigned char)*p;
+	if( !utf8 || c < 0xC0 )
+		return 1;
+
+	int n = c >= 0xF0 ? 4 : c >= 0xE0 ? 3 : 2;
+	for( int i = 1; i < n; ++i )
+		if( !p[i] )
+			return i;
+	return n;
+}
+
+// the width of one character in pixels of the screen (the colour codes \x01..\x04 have none)
+static int CharWidth( CGlyphFont *font, const char *p, int len )
+{
+	const unsigned char c = (unsigned char)*p;
+	if( c >= 1 && c <= 4 )
+		return 0;
+
+	const std::u32string chars = GlyphText_Decode( TextUtf::ToUtf8( std::string( p, (size_t)len ).c_str() ));
+	font->Prepare( chars );
+
+	int w = 0;
+	for( char32_t ch : chars )
+	{
+		const CGlyphFont::Glyph *g = font->Find( ch );
+		if( !g )
+			g = font->Find( '?' );
+		if( g )
+			w += g->advance;
+	}
+	return w;
+}
+
+// the width of a string in units of the HUD and the height of a line, as DrawUtils::ConsoleStringSize
+static bool StringSize( const char *s, int *width, int *height )
+{
+	CGlyphFont *font = Font();
+	if( !font )
+		return false;
+
+	const bool utf8 = TextUtf::IsValidUtf8( s );
+	int px = 0;
+	for( const char *p = s; *p; )
+	{
+		const int len = CharLength( p, utf8 );
+		px += CharWidth( font, p, len );
+		p += len;
+	}
+
+	*width = (int)( px / Scale() + 0.999f );
+	*height = (int)( font->Height() / Scale() + 0.5f );
+	return true;
+}
+
+// a piece of a line in one colour; the texts are kept per line (they change only when the chat scrolls)
+static CTextTexture g_pieces[MAX_LINES][16];
+
+static int DrawPiece( int line, int piece, int x, int y, const char *text, float r, float g, float b )
+{
+	if( line < 0 || line >= MAX_LINES || piece < 0 || piece >= 16 )
+		return x;
+
+	CTextTexture &tex = g_pieces[line][piece];
+	CGlyphFont *font = Font();
+	const SpecBar::Font f = SpecBar::FontFor( TrueHeight );
+	if( !font || !tex.Update( TextUtf::ToUtf8( text ), "Verdana", SpecBar::FontEm( f.tall ), 600, f.antialias ) || !tex.Valid() )
+		return x;
+
+	// a black shadow 1 pixel to the right and down, as the chat of the Steam version (at every resolution): the
+	// letters stay readable on bright walls
+	const float scale = Scale();
+	tex.Draw( x * scale + 1, y * scale + 1, 0, 0, 0, 255 );
+	tex.Draw( x * scale, y * scale, (int)( r * 255.0f ), (int)( g * 255.0f ), (int)( b * 255.0f ), 255 );
+	return x + (int)( tex.Width() / scale + 0.5f );
+}
+
+} // namespace ChatText
 
 int CHudSayText :: Init( void )
 {
@@ -150,6 +255,9 @@ int CHudSayText :: Draw( float flTime )
 		int current_x = LINE_START;
 		const char* text = g_szLineBuffer[i];
 		size_t length = strlen(text);
+		const bool atlas = ChatText::Font() != nullptr;
+		int piece = 0;
+		float cr = g_ColorYellow[0], cg = g_ColorYellow[1], cb = g_ColorYellow[2];
 
 		// default color if not set
 		DrawUtils::SetConsoleTextColor(g_ColorYellow[0], g_ColorYellow[1], g_ColorYellow[2]);
@@ -162,13 +270,16 @@ int CHudSayText :: Draw( float flTime )
 		{
 			// color code parse
 			// '\x01' - normal (yellow); '\0x03' - teamcolor (R GREY B); '\x04' - green
-			if (text[c] == '\x01' || text[c] == '\x03' || text[c] == '\x04')
+			if (text[c] == '\x01' || text[c] == '\x02' || text[c] == '\x03' || text[c] == '\x04')
 			{
 				// if there are characters in the buffer, we draw them with the current color
 				if (buffer_pos > 0)
 				{
 					color_buffer[buffer_pos] = '\x00';
-					current_x = DrawUtils::DrawConsoleString(current_x, y, color_buffer);
+					if( atlas )
+						current_x = ChatText::DrawPiece( i, piece++, current_x, y, color_buffer, cr, cg, cb );
+					else
+						current_x = DrawUtils::DrawConsoleString(current_x, y, color_buffer);
 					buffer_pos = 0;
 				}
 
@@ -178,15 +289,19 @@ int CHudSayText :: Draw( float flTime )
 				{
 					case '\x01': // yellow normal
 						DrawUtils::SetConsoleTextColor(g_ColorYellow[0], g_ColorYellow[1], g_ColorYellow[2]);
+						cr = g_ColorYellow[0]; cg = g_ColorYellow[1]; cb = g_ColorYellow[2];
 						break;
+					case '\x02': // the colour of the player's name in the Steam version (as the team colour here)
 					case '\x03': // team color
 						if (g_pflNameColors[i])
 						{
 							DrawUtils::SetConsoleTextColor(g_pflNameColors[i][0], g_pflNameColors[i][1], g_pflNameColors[i][2]);
+							cr = g_pflNameColors[i][0]; cg = g_pflNameColors[i][1]; cb = g_pflNameColors[i][2];
 						}
 						break;
 					case '\x04': // green
 						DrawUtils::SetConsoleTextColor(g_ColorGreen[0], g_ColorGreen[1], g_ColorGreen[2]);
+						cr = g_ColorGreen[0]; cg = g_ColorGreen[1]; cb = g_ColorGreen[2];
 						break;
 				}
 				continue;
@@ -203,7 +318,10 @@ int CHudSayText :: Draw( float flTime )
 		if (buffer_pos > 0)
 		{
 			color_buffer[buffer_pos] = '\x00';
-			DrawUtils::DrawConsoleString(current_x, y, color_buffer);
+			if( atlas )
+				ChatText::DrawPiece( i, piece++, current_x, y, color_buffer, cr, cg, cb );
+			else
+				DrawUtils::DrawConsoleString(current_x, y, color_buffer);
 		}
 
 		y += line_height;
@@ -220,59 +338,61 @@ struct
 	bool allowDead;
 } sayTextFmt[] =
 {
+	// the formats of the Steam version (resource/cstrike_english.txt): the prefix and the text in the normal colour,
+	// the name in the colour of the team, " :  " with two spaces
 	{
 		"#Cstrike_Chat_CT",
-		"\x03(Counter-Terrorist) %s1 : \x01%s2",
+		"\x01(Counter-Terrorist) \x03%s1\x01 :  %s2",
 		2, true
 	},
 	{
 		"#Cstrike_Chat_T",
-		"\x03(Terrorist) %s1 : \x01%s2",
+		"\x01(Terrorist) \x03%s1\x01 :  %s2",
 		2, true
 	},
 	{
 		"#Cstrike_Chat_CT_Dead",
-		"\x03*DEAD*(Counter-Terrorist) %s1 : \x01%s2",
+		"\x01*DEAD*(Counter-Terrorist) \x03%s1\x01 :  %s2",
 		2, false
 	},
 	{
 		"#Cstrike_Chat_T_Dead",
-		"\x03*DEAD*(Terrorist) %s1 : \x01%s2",
+		"\x01*DEAD*(Terrorist) \x03%s1\x01 :  %s2",
 		2, false
 	},
 	{
 		"#Cstrike_Chat_Spec",
-		"\x03(Spectator) %s1 : \x03%s2",
+		"\x01(Spectator) \x03%s1\x01 :  %s2",
 		2, false
 	},
 	{
 		"#Cstrike_Chat_All",
-		"\x03%s1 : \x01%s2",
+		"\x03%s1 :  \x01%s2",
 		2, true
 	},
 	{
 		"#Cstrike_Chat_AllDead",
-		"\x03*DEAD* %s1: \x01%s2",
+		"\x01*DEAD* \x03%s1\x01 :  %s2",
 		2, false
 	},
 	{
 		"#Cstrike_Chat_AllSpec",
-		"\x03*SPEC* %s1: \x03%s2",
+		"\x01*SPEC* \x03%s1\x01 :  %s2",
 		2, false
 	},
 	{
 		"#Cstrike_Name_Change",
-		"\x03* %s1 changed name to %s2",
+		"\x01* \x03%s1\x01 changed name to \x03%s2",
 		2, true
 	},
 	{
 		"#Cstrike_Chat_T_Loc",
-		"\x03*(Terrorist) %s1 @ %s3 : \x01%s2",
+		"\x01*(Terrorist) \x03%s1\x01 @ %s3 :  %s2",
 		3, true
 	},
 	{
 		"#Cstrike_Chat_CT_Loc",
-		"\x03*(Counter-Terrorist) %s1 @ %s3 : \x01%s2",
+		"\x01*(Counter-Terrorist) \x03%s1\x01 @ %s3 :  %s2",
 		3, true
 	},
 	{
@@ -419,7 +539,8 @@ void CHudSayText :: SayTextPrint( const char *pszBuf, int iBufSize, int clientIn
 	}
 	else
 	{
-		Y_START = ScreenHeight * 4 / 5;
+		// the spectator mode: the first line is 2 lines above 4/5 of the screen in the Steam version (826 at 1080)
+		Y_START = ScreenHeight * 4 / 5 + line_height * ( MAX_LINES - 1 );
 	}
 	Y_START -= (line_height * (MAX_LINES+1));
 
@@ -428,7 +549,14 @@ void CHudSayText :: SayTextPrint( const char *pszBuf, int iBufSize, int clientIn
 void CHudSayText :: EnsureTextFitsInOneLineAndWrapIfHaveTo( int line )
 {
 	int line_width = 0;
-	DrawUtils::ConsoleStringSize(g_szLineBuffer[line], &line_width, &line_height );
+	if( !ChatText::StringSize( g_szLineBuffer[line], &line_width, &line_height ))
+		DrawUtils::ConsoleStringSize(g_szLineBuffer[line], &line_width, &line_height );
+
+	// the letters are measured whole (a letter of UTF-8 is several bytes)
+	CGlyphFont *atlasFont = ChatText::Font();
+	const bool utf8 = TextUtf::IsValidUtf8( g_szLineBuffer[line] );
+	int lengthPx = (int)( LINE_START * ChatText::Scale() );
+	char *charStart = NULL;
 
 	if ( (line_width + LINE_START) > MAX_LINE_WIDTH )
 	{ // string is too long to fit on line
@@ -459,14 +587,25 @@ void CHudSayText :: EnsureTextFitsInOneLineAndWrapIfHaveTo( int line )
 			if ( *x == ' ' && x != g_szLineBuffer[line] )  // store each line break,  except for the very first character
 				last_break = x;
 
-			buf[0] = *x;  // get the length of the current character
-			DrawUtils::ConsoleStringSize( buf, &tmp_len, &line_height );
-			length += tmp_len;
+			if( atlasFont )
+			{
+				charStart = x;
+				const int charLen = ChatText::CharLength( x, utf8 );
+				lengthPx += ChatText::CharWidth( atlasFont, x, charLen );
+				length = (int)( lengthPx / ChatText::Scale() + 0.999f );
+				x += charLen - 1; // the next character after the loop's x++ (a break is only at a space)
+			}
+			else
+			{
+				buf[0] = *x;  // get the length of the current character
+				DrawUtils::ConsoleStringSize( buf, &tmp_len, &line_height );
+				length += tmp_len;
+			}
 
 			if ( length > MAX_LINE_WIDTH )
 			{  // needs to be broken up
 				if ( !last_break )
-					last_break = x-1;
+					last_break = ( atlasFont && charStart && charStart != g_szLineBuffer[line] ) ? charStart : x-1;
 
 				x = last_break;
 

@@ -23,6 +23,8 @@
 #include <stdio.h>
 #include "draw_util.h"
 #include "strl.h"
+#include "hud/spectator_layout.h"
+#include "hud/text_utf8.h"
 
 float color[3];
 
@@ -78,6 +80,78 @@ int CHudDeathNotice :: VidInit( void )
 	return 1;
 }
 
+// The kill feed as in the Steam version (measured on its screenshots at 1920x1080): the names in "Default"
+// (Verdana, weight 600, the font of the spectator bar), the rows 16 units apart (36 pixels at 1080), the first one
+// at 32 units (72 pixels) or right under the upper bar of the spectator mode (144); the right edge of the last name
+// 12.8 units (29 pixels) from the edge of the screen; 5.33 units (12 pixels) between a name and an icon and between
+// the icons. The icons are the sprites of hud.txt, one pixel of the sprite on one pixel of the screen.
+static CTextTexture g_dnKiller[MAX_DEATHNOTICES + 1], g_dnVictim[MAX_DEATHNOTICES + 1];
+
+static float DeathNoticeTextColor( const float *color, int c )
+{
+	return color ? color[c] * 255.0f : 255.0f;
+}
+
+bool CHudDeathNotice::DrawSteam( int i, int y )
+{
+	DeathNoticeItem &item = rgDeathNoticeList[i];
+
+	const float scale = gHUD.m_flScale > 0.0f ? gHUD.m_flScale : 1.0f; // pixels of the screen per unit of the HUD
+	const float u = ScreenHeight / 480.0f;
+	const SpecBar::Font font = SpecBar::FontFor( TrueHeight );
+	const int em = SpecBar::FontEm( font.tall );
+
+	const bool hasKiller = !item.bSuicide;
+	const bool hasVictim = !item.bNonPlayerKill;
+
+	if( hasKiller && !g_dnKiller[i].Update( TextUtf::ToUtf8( item.szKiller ), "Verdana", em, 600, font.antialias ))
+		return false;
+	if( hasVictim && !g_dnVictim[i].Update( TextUtf::ToUtf8( item.szVictim ), "Verdana", em, 600, font.antialias ))
+		return false;
+
+	const int id = ( item.iId == -1 ) ? m_HUD_d_skull : item.iId;
+	const wrect_t &weapon = gHUD.GetSpriteRect( id );
+	const wrect_t &headshot = gHUD.GetSpriteRect( m_HUD_d_headshot );
+	const int weaponW = weapon.right - weapon.left;
+	const int headshotW = item.iHeadShotId ? headshot.right - headshot.left : 0;
+
+	const int gap = (int)( 5.33f * u + 0.5f );
+	const int killerW = hasKiller ? (int)( g_dnKiller[i].Width() / scale + 0.5f ) : 0;
+	const int victimW = hasVictim ? (int)( g_dnVictim[i].Width() / scale + 0.5f ) : 0;
+
+	// from the right edge to the left
+	const int right = ScreenWidth - (int)( 12.8f * u + 0.5f );
+	const int victimX = right - victimW;
+	const int headshotX = ( hasVictim ? victimX - gap : right ) - headshotW;
+	const int weaponX = ( item.iHeadShotId ? headshotX - gap : headshotX ) - weaponW;
+	const int killerX = weaponX - gap - killerW;
+
+	if( hasKiller )
+		g_dnKiller[i].Draw( killerX * scale, y * scale, (int)DeathNoticeTextColor( item.KillerColor, 0 ),
+			(int)DeathNoticeTextColor( item.KillerColor, 1 ), (int)DeathNoticeTextColor( item.KillerColor, 2 ));
+
+	int r = 255, g = 80, b = 0;
+	if( item.bTeamKill )
+	{
+		r = 10; g = 240; b = 10; // display it in sickly green
+	}
+
+	SPR_Set( gHUD.GetSprite( id ), r, g, b );
+	SPR_DrawAdditive( 0, weaponX, y, &weapon );
+
+	if( item.iHeadShotId )
+	{
+		SPR_Set( gHUD.GetSprite( m_HUD_d_headshot ), r, g, b );
+		SPR_DrawAdditive( 0, headshotX, y, &headshot );
+	}
+
+	if( hasVictim )
+		g_dnVictim[i].Draw( victimX * scale, y * scale, (int)DeathNoticeTextColor( item.VictimColor, 0 ),
+			(int)DeathNoticeTextColor( item.VictimColor, 1 ), (int)DeathNoticeTextColor( item.VictimColor, 2 ));
+
+	return true;
+}
+
 int CHudDeathNotice :: Draw( float flTime )
 {
 	int x, y, r, g, b, i;
@@ -101,6 +175,14 @@ int CHudDeathNotice :: Draw( float flTime )
 		//if ( gViewPort && gViewPort->AllowedToPrintText() )
 		//if ( !gHUD.m_iNoConsolePrint )
 		{
+			// as in the Steam version (the fonts of Windows); without them the old way below
+			if( DrawUtils::UseAtlasText() )
+			{
+				const int top = g_iUser1 ? CHudSpectatorGui::BarHeight() : YRES( DEATHNOTICE_TOP );
+				if( DrawSteam( i, top + YRES( 16 ) * i ))
+					continue;
+			}
+
 			// Draw the death notice
 			if( !g_iUser1 )
 			{

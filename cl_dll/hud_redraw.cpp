@@ -56,6 +56,16 @@ void CHud::Think(void)
 	newfov = HUD_GetFOV();
 	m_iFOV = newfov ? newfov : default_fov->value;
 
+	if (default_fov->value < 90.0f)
+    {
+		// prevents players from entering "scope" on every weapon
+        gEngfuncs.Cvar_SetValue("default_fov", 90.0f);
+    }
+
+	if (m_iFOV == 90) {
+		m_iFOV = default_fov->value;
+	}
+
 	// the clients fov is actually set in the client data update section of the hud
 
 	// Set a new sensitivity

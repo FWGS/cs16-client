@@ -77,7 +77,6 @@ int CHudSayText :: Init( void )
 	m_HUD_saytext =			gEngfuncs.pfnRegisterVariable( "hud_saytext_internal", "1", 0 );
 	m_HUD_saytext_time =	gEngfuncs.pfnRegisterVariable( "hud_saytext_time", "5", 0 );
 	m_HUD_saytext_console =	gEngfuncs.pfnRegisterVariable( "hud_saytext_console", "1", 0 );
-	// the sound of a new message of the chat (misc/talk.wav of Half-Life): the Steam version of CS has none, 1 - on
 	m_HUD_saytext_sound = gEngfuncs.pfnRegisterVariable( "hud_saytext_sound", "0", FCVAR_ARCHIVE );
 
 	m_iFlags |= HUD_INTERMISSION; // is always drawn during an intermission
@@ -413,8 +412,9 @@ void CHudSayText :: SayTextPrint( const char *pszBuf, int iBufSize, int clientIn
 	strlcpy( g_szLineBuffer[i], pszBuf, sizeof( g_szLineBuffer[i] ) );
 
 	// the line end of the message is not a line of the chat
-	for( size_t n = strlen( g_szLineBuffer[i] ); n > 0 && ( g_szLineBuffer[i][n - 1] == '\n' || g_szLineBuffer[i][n - 1] == '\r' ); --n )
-		g_szLineBuffer[i][n - 1] = 0;
+    size_t n = strlen( g_szLineBuffer[i] );
+    while( n > 0 && ( g_szLineBuffer[i][n - 1] == '\n' || g_szLineBuffer[i][n - 1] == '\r' ))
+        g_szLineBuffer[i][--n] = 0;
 
 	// make sure the text fits in one line
 	EnsureTextFitsInOneLineAndWrapIfHaveTo( i );
@@ -426,7 +426,7 @@ void CHudSayText :: SayTextPrint( const char *pszBuf, int iBufSize, int clientIn
 	}
 
 	m_iFlags |= HUD_DRAW;
-	if( m_HUD_saytext_sound && m_HUD_saytext_sound->value )
+	if( m_HUD_saytext->value && m_HUD_saytext_sound && m_HUD_saytext_sound->value )
 		PlaySound( "misc/talk.wav", 1 );
 
 	if( !g_iUser1 )

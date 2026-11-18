@@ -454,6 +454,12 @@ int CHudMessage::Draw( float fTime )
 }
 
 
+// a text sent by the server with TE_TEXTMESSAGE: the engine keeps it in the message of its channel
+static bool IsServerTextMessage( const client_textmessage_t *message )
+{
+	return message && message->pName && !strncmp( message->pName, "TextMessage", sizeof( "TextMessage" ) - 1 );
+}
+
 void CHudMessage::MessageAdd( const char *pName, float time, qboolean hintMessage/*, unsigned int font */ )
 {
 	int i, j;
@@ -560,8 +566,24 @@ void CHudMessage::MessageAdd( const char *pName, float time, qboolean hintMessag
 			{
 				if ( m_pMessages[j].pMessage )
 				{
+					if ( IsServerTextMessage( message ))
+					{
+						// A text of the server (TE_TEXTMESSAGE, a plugin's hudmessage) sent again into the same
+						// channel: shown from now on. The engine writes every text into the message of its channel
+						// (TextMessage0..7), so the new one is the very message already shown; ignoring it let the
+						// old one end and the text blinked (a second shown, a second gone) on servers that send their
+						// HUD every second, the Steam version keeps it on the screen.
+						if ( m_pMessages[j].pMessage == message )
+						{
+							m_startTime[j] = time;
+							return;
+						}
+
+						// another channel is a message of its own, even with the same text (only the place below
+						// replaces it, as a resend through the auto channel lands in the next channel at the same place)
+					}
 					// is this message already in the list
-					if ( !strcmp( message->pMessage, m_pMessages[j].pMessage->pMessage ) )
+					else if ( !strcmp( message->pMessage, m_pMessages[j].pMessage->pMessage ) )
 					{
 						if( !strcmp( message->pName, "Custom" ) )
 						{

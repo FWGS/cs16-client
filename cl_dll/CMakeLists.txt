@@ -77,6 +77,35 @@ add_library(${CLIENT_LIB} SHARED ${CS_CLIENT_SRC})
 
 set_target_postfix(${CLIENT_LIB})
 
+if(WIN32)
+	# gdi32 and user32: the letters of the Windows fonts for the atlases (hud/glyph_gdi.cpp)
+	target_link_libraries(${CLIENT_LIB} gdi32 user32)
+endif()
+
+# The fonts for the atlases of the texts (hud/glyph_freetype.cpp) on the systems without the fonts of Windows:
+# FreeType draws the letters, fontconfig finds the font files. Without them the font of the HUD is used.
+if(NOT WIN32 AND NOT ANDROID)
+	find_package(PkgConfig QUIET)
+	if(PkgConfig_FOUND)
+		pkg_check_modules(CS16_FONTS QUIET IMPORTED_TARGET freetype2 fontconfig)
+	endif()
+	# required on Linux and the BSDs: without them the client would have no texts of its own but the font of the
+	# HUD (CS16CLIENT_REQUIRE_FREETYPE=OFF builds such a client anyway)
+	option(CS16CLIENT_REQUIRE_FREETYPE "Fail without FreeType and fontconfig on Linux and the BSDs" ON)
+	if(NOT CS16_FONTS_FOUND AND CS16CLIENT_REQUIRE_FREETYPE AND CMAKE_SYSTEM_NAME MATCHES "Linux|BSD")
+		message(FATAL_ERROR "The texts of the client need FreeType and fontconfig: install their development "
+			"packages (Debian/Ubuntu: libfreetype-dev libfontconfig-dev; Fedora: freetype-devel fontconfig-devel), "
+			"or configure with -DCS16CLIENT_REQUIRE_FREETYPE=OFF to use the font of the HUD")
+	endif()
+	if(CS16_FONTS_FOUND)
+		target_link_libraries(${CLIENT_LIB} PkgConfig::CS16_FONTS)
+		target_compile_definitions(${CLIENT_LIB} PRIVATE CS16CLIENT_FREETYPE=1)
+		message(STATUS "Client texts: FreeType and fontconfig")
+	else()
+		message(STATUS "Client texts: no FreeType/fontconfig, the font of the HUD is used")
+	endif()
+endif()
+
 install(TARGETS ${CLIENT_LIB}
 	DESTINATION "${GAME_DIR}/${CLIENT_INSTALL_DIR}/"
 	PERMISSIONS OWNER_READ OWNER_WRITE OWNER_EXECUTE

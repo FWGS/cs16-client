@@ -36,6 +36,7 @@
 #include "environment.h"
 
 #include "cl_util.h"
+#include "chrome/chrome_host.h"
 
 cl_enginefunc_t		gEngfuncs  = { };
 render_api_t		gRenderAPI = { };
@@ -113,6 +114,8 @@ int DLLEXPORT Initialize( cl_enginefunc_t *pEnginefuncs, int iVersion )
 	Game_HookEvents();
 	CL_LoadParticleMan();
 
+	Chrome::Initialize();
+
 	return 1;
 }
 
@@ -126,6 +129,9 @@ HUD_Shutdown
 void DLLEXPORT HUD_Shutdown( void )
 {
 	gHUD.Shutdown();
+
+	Chrome::Shutdown();
+
 	Input_Shutdown();
 	Localize_Free();
 	g_Environment.Clear();
@@ -362,6 +368,8 @@ void DLLEXPORT HUD_Frame( double time )
 	}
 
 	GetClientVoice()->Frame( time );
+
+	Chrome::RunFrame();
 }
 
 

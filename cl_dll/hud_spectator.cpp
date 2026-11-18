@@ -806,6 +806,37 @@ void CHudSpectator::FindNextPlayer(bool bReverse)
 	iJumpSpectator = 1;
 }
 
+// The player chosen in the list of the spectator menu (as in the Steam version): the server is asked to follow
+// him by the name, in HLTV the camera jumps to him here
+void CHudSpectator::FollowPlayer( int index )
+{
+	if( index < 1 || index > MAX_PLAYERS )
+		return;
+
+	gHUD.m_Scoreboard.GetAllPlayersInfo();
+
+	if( !gEngfuncs.IsSpectateOnly() )
+	{
+		const char *name = g_PlayerInfoList[index].name;
+		if( !name || !name[0] )
+			return;
+
+		char cmdstring[128];
+		snprintf( cmdstring, sizeof( cmdstring ), "follow \"%s\"", name );
+		gEngfuncs.pfnServerCmd( cmdstring );
+		return;
+	}
+
+	cl_entity_t *pEnt = gEngfuncs.GetEntityByIndex( index );
+	if( !IsActivePlayer( pEnt ))
+		return;
+
+	g_iUser2 = index;
+	VectorCopy( pEnt->origin, vJumpOrigin );
+	VectorCopy( pEnt->angles, vJumpAngles );
+	iJumpSpectator = 1;
+}
+
 void CHudSpectator::HandleButtonsDown( int ButtonPressed )
 {
 	double time = gEngfuncs.GetClientTime();

@@ -26,6 +26,7 @@
 #include <stdio.h>
 #include "draw_util.h"
 #include "strl.h"
+#include "chrome/chrome_host.h"
 
 //#include "vgui_TeamFortressViewport.h"
 
@@ -63,8 +64,23 @@ int CHudMenu :: Init( void )
 	return 1;
 }
 
+// As in the Steam version, the menus of choosing the team and the class wait while the MOTD window is open:
+// the server sends them right after the MOTD, and they are shown when the window is closed.
+static int s_iMenuAfterMotd = -1;
+
+void Menu_ShowAfterMotd( void )
+{
+	if( s_iMenuAfterMotd < 0 || Chrome::IsMotdShown() )
+		return;
+
+	const int menuType = s_iMenuAfterMotd;
+	s_iMenuAfterMotd = -1;
+	gHUD.m_Menu.ShowVGUIMenu( menuType );
+}
+
 void CHudMenu :: InitHUDData( void )
 {
+	s_iMenuAfterMotd = -1; // a new server or level: nothing is waiting
 	m_fMenuDisplayed = 0;
 	m_bitsValidSlots = 0;
 	Reset();
@@ -276,6 +292,15 @@ void CHudMenu::ShowVGUIMenu( int menuType )
 {
 	int team = g_PlayerExtraInfo[gHUD.m_Scoreboard.m_iPlayerNum].teamnumber;
 	int haveCancel = team != TEAM_UNASSIGNED ? 1 : 0;
+
+	if(( menuType == MENU_TEAM || menuType == MENU_CLASS_T || menuType == MENU_CLASS_CT ) && Chrome::IsMotdShown() )
+	{
+		s_iMenuAfterMotd = menuType; // shown by Menu_ShowAfterMotd() when the MOTD window is closed
+		return;
+	}
+
+	if( menuType == MENU_TEAM || menuType == MENU_CLASS_T || menuType == MENU_CLASS_CT )
+		s_iMenuAfterMotd = -1; // shown now: nothing waits any more
 
 	if( g_pMenu && !UseOldTouchMenusEnabled() )
 	{

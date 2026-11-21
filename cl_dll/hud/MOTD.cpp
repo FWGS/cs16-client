@@ -27,10 +27,32 @@
 #include <stdio.h>
 #include "draw_util.h"
 #include "build.h"
+#ifdef _CSWEB_ENABLE
+#include "csw_interface.h"
+#endif
 
 #if XASH_WIN32 == 1 || XASH_PSVITA == 1
 #define strcasestr strstr
 #endif
+
+void Close_f(void)
+{
+    gHUD.m_MOTD.Reset();
+}
+
+void OpenURL_f( void )
+{
+    if( gEngfuncs.Cmd_Argc() < 2 )
+        return;
+
+	const char* url = gEngfuncs.Cmd_Argv(1);
+
+#ifdef _CSWEB_ENABLE
+	CSW_Create( 800, 600, url );
+	gHUD.m_MOTD.m_iFlags |= HUD_DRAW;
+    gHUD.m_MOTD.m_bShow = true;
+#endif
+}
 
 int CHudMOTD :: Init( void )
 {
@@ -38,7 +60,9 @@ int CHudMOTD :: Init( void )
 
 	HOOK_MESSAGE( gHUD.m_MOTD, MOTD );
 
-	cl_hide_motd = CVAR_CREATE("cl_hide_motd", "0", FCVAR_ARCHIVE); // hide motd
+	cl_motd_hide = CVAR_CREATE("cl_motd_hide", "0", FCVAR_ARCHIVE); // hide motd
+	gEngfuncs.pfnAddCommand("cl_motd_openurl", OpenURL_f );
+	gEngfuncs.pfnAddCommand("cl_motd_close", Close_f );
 	Reset();
 
 	return 1;
@@ -57,6 +81,9 @@ void CHudMOTD :: Reset( void )
 	m_iLines = 0;
 	m_bShow = false;
 	ignoreThisMotd = false;
+#ifdef _CSWEB_ENABLE
+	CSW_Destroy();
+#endif
 }
 
 #define LINE_HEIGHT  13
@@ -69,11 +96,19 @@ int CHudMOTD :: Draw( float fTime )
 	if( !m_bShow )
 		return 1;
 
-	if( cl_hide_motd->value )
+	if( cl_motd_hide->value )
 	{
 		Reset();
 		return 1;
 	}
+
+#ifdef _CSWEB_ENABLE
+    int x = (ScreenWidth - 800) / 2;
+    int y = (ScreenHeight - 600) / 2;
+
+    CSW_Draw( 800, 600, x, y );
+    return 1;
+#endif
 
 	gHUD.m_iNoConsolePrint |= 1 << 1;
 	// find the top of where the MOTD should be drawn,  so the whole thing is centered in the screen
@@ -129,7 +164,7 @@ int CHudMOTD :: Draw( float fTime )
 
 int CHudMOTD :: MsgFunc_MOTD( const char *pszName, int iSize, void *pbuf )
 {
-	if( cl_hide_motd->value )
+	if( cl_motd_hide->value )
 		return 1;
 
 	if ( m_iFlags & HUD_DRAW )

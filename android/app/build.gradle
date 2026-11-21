@@ -6,7 +6,7 @@ apply plugin: "com.android.application"
 
 android {
 	namespace = "su.xash.cs16client"
-	ndkVersion = "28.2.13676358"
+	ndkVersion = "26.3.11579264"
 	compileSdk = 36
 
 	defaultConfig {
@@ -70,6 +70,18 @@ android {
 			shrinkResources = true
 
 			proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.txt"
+		}
+
+		create("servo") {
+			initWith(getByName("release"))
+			applicationIdSuffix = ".csweb"
+			signingConfig = signingConfigs.debug
+
+			externalNativeBuild {
+                cmake {
+                    arguments "-DCMAKE_BUILD_TYPE=Release"
+                }
+			}
 		}
 
 		create("continuous") {

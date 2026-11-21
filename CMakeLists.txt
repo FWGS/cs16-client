@@ -18,6 +18,7 @@ endif()
 option(BUILD_CLIENT "Build client library." ON)
 option(BUILD_MAINUI "Build menu library." ON)
 option(BUILD_SERVER "Build server library." ON)
+option(BUILD_CSWEB "Build csweb library." ON)
 option(ENABLE_YY_THUNKS "Enable YY-Thunks for Windows XP compatibility." ON)
 
 set(GAME_DIR "cstrike" CACHE STRING "Game directory name.")
@@ -43,6 +44,10 @@ check_symbol_exists(strlcpy string.h HAVE_STRLCPY)
 check_symbol_exists(strlcat string.h HAVE_STRLCAT)
 
 include(YYThunks)
+
+if(BUILD_CSWEB)
+    add_subdirectory(3rdparty/csweb)
+endif()
 
 if(BUILD_CLIENT)
 	add_subdirectory(cl_dll)

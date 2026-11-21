@@ -36,6 +36,9 @@
 #include "environment.h"
 
 #include "cl_util.h"
+#ifdef _CSWEB_ENABLE
+#include "csw_interface.h"
+#endif
 
 cl_enginefunc_t		gEngfuncs  = { };
 render_api_t		gRenderAPI = { };
@@ -139,6 +142,9 @@ void DLLEXPORT HUD_Shutdown( void )
 		miniMem->Reset();
 		miniMem->Shutdown();
 	}
+#ifdef _CSWEB_ENABLE
+	CSW_Destroy();
+#endif
 }
 
 
@@ -275,6 +281,9 @@ void DLLEXPORT HUD_Init( void )
 {
 	LoadMenuInterface();
 	InitInput();
+#ifdef _CSWEB_ENABLE
+	CSW_Init();
+#endif
 	gHUD.Init();
 	
 	// Initialize menu if it's loaded
@@ -348,6 +357,9 @@ void DLLEXPORT HUD_Frame( double time )
 {
 #ifdef _CS16CLIENT_ENABLE_GSRC_SUPPORT
 	gEngfuncs.VGui_ViewportPaintBackground(HUD_GetRect());
+#endif
+#ifdef _CSWEB_ENABLE
+	CSW_Frame();
 #endif
 
 	// Handle menu input and mouse movement

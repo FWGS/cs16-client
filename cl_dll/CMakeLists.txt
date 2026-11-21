@@ -75,6 +75,19 @@ endif()
 
 add_library(${CLIENT_LIB} SHARED ${CS_CLIENT_SRC})
 
+if(TARGET csweb::client)
+    file(GLOB CS_WEB_SRC CONFIGURE_DEPENDS "cs_web/*.cpp")
+    target_sources(${CLIENT_LIB} PRIVATE ${CS_WEB_SRC})
+    target_include_directories(${CLIENT_LIB} PRIVATE cs_web)
+    target_link_libraries(${CLIENT_LIB} PRIVATE csweb::client ${CMAKE_DL_LIBS})
+    add_dependencies(${CLIENT_LIB} csweb)
+
+    if(APPLE)
+        target_link_libraries(${CLIENT_LIB} PRIVATE "-framework OpenGL")
+        target_compile_options(${CLIENT_LIB} PRIVATE -Wno-deprecated-declarations)
+    endif()
+endif()
+
 set_target_postfix(${CLIENT_LIB})
 
 install(TARGETS ${CLIENT_LIB}

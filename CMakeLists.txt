@@ -18,7 +18,7 @@ endif()
 option(BUILD_CLIENT "Build client library." ON)
 option(BUILD_MAINUI "Build menu library." ON)
 option(BUILD_SERVER "Build server library." ON)
-option(BUILD_CSWEB "Build csweb library." ON)
+option(BUILD_CSWEB "Build csweb library." OFF)
 option(ENABLE_YY_THUNKS "Enable YY-Thunks for Windows XP compatibility." ON)
 
 set(GAME_DIR "cstrike" CACHE STRING "Game directory name.")

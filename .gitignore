@@ -47,7 +47,7 @@ android/app/src/main/assets
 *-build
 *admob-id.xml
 
-build/
+build*/
 
 .vscode/
 

@@ -80,12 +80,16 @@ jobs:
           distribution: 'temurin'
           cache: gradle
       - name: Setup Rust
+        shell: bash
         working-directory: 3rdparty/csweb/rust
         run: |
-          # toolchain берётся из rust-toolchain.toml
+          CHANNEL=$(sed -nE 's/^channel *= *"([^"]+)".*/\1/p' rust-toolchain.toml)
+          echo "Pinned toolchain: $CHANNEL"
           rustup toolchain install --profile minimal
-          rustup target add aarch64-linux-android armv7-linux-androideabi
+          rustup default "$CHANNEL"
+          rustup target add --toolchain "$CHANNEL" aarch64-linux-android armv7-linux-androideabi
           rustc --version
+          rustup target list --installed
       - name: Setup Cargo cache
         uses: actions/cache@v6
         with:
@@ -186,6 +190,8 @@ jobs:
     runs-on: windows-latest
     env:
       SCCACHE_DIR: ${{ github.workspace }}/.sccache
+      CARGO_HOME: C:\c
+      CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
     strategy:
       matrix:
         arch: [ 'x86', 'amd64' ]
@@ -195,6 +201,8 @@ jobs:
             csweb: true
       fail-fast: false
     steps:
+      - name: Enable git long paths
+        run: git config --system core.longpaths true
       - name: Checkout sources
         uses: actions/checkout@v5
         with:
@@ -211,17 +219,21 @@ jobs:
         run: bash scripts/setup_yy_thunks.sh
       - name: Setup Rust
         if: matrix.csweb
+        shell: bash
         working-directory: 3rdparty/csweb/rust
         run: |
+          CHANNEL=$(sed -nE 's/^channel *= *"([^"]+)".*/\1/p' rust-toolchain.toml)
+          echo "Pinned toolchain: $CHANNEL"
           rustup toolchain install --profile minimal
+          rustup default "$CHANNEL"
           rustc --version
       - name: Setup Cargo cache
         if: matrix.csweb
         uses: actions/cache@v6
         with:
           path: |
-            ~/.cargo/registry
-            ~/.cargo/git
+            C:\c\registry
+            C:\c\git
           key: Windows-CSWeb-cargo-${{ hashFiles('3rdparty/csweb/rust/Cargo.lock') }}
           restore-keys: |
             Windows-CSWeb-cargo-
@@ -291,9 +303,13 @@ jobs:
             libx11-dev libxcb1-dev pkg-config python3
       - name: Setup Rust
         if: matrix.csweb
+        shell: bash
         working-directory: 3rdparty/csweb/rust
         run: |
+          CHANNEL=$(sed -nE 's/^channel *= *"([^"]+)".*/\1/p' rust-toolchain.toml)
+          echo "Pinned toolchain: $CHANNEL"
           rustup toolchain install --profile minimal
+          rustup default "$CHANNEL"
           rustc --version
       - name: Setup Cargo cache
         if: matrix.csweb
@@ -361,9 +377,13 @@ jobs:
         run: brew install cmake ninja fontconfig ccache
       - name: Setup Rust
         if: matrix.csweb
+        shell: bash
         working-directory: 3rdparty/csweb/rust
         run: |
+          CHANNEL=$(sed -nE 's/^channel *= *"([^"]+)".*/\1/p' rust-toolchain.toml)
+          echo "Pinned toolchain: $CHANNEL"
           rustup toolchain install --profile minimal
+          rustup default "$CHANNEL"
           rustc --version
       - name: Setup Cargo cache
         if: matrix.csweb

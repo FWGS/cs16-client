@@ -14,6 +14,8 @@
 namespace csw
 {
 
+extern Cvars cv;
+
 // Numeric values must match LogLevel in rust/src/console.rs.
 enum class LogLevel : int
 {

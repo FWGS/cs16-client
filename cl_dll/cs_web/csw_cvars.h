@@ -13,7 +13,7 @@ struct Cvars
     cvar_t *cursorScale = nullptr;
 };
 
-inline Cvars cv;
+extern Cvars cv;
 
 inline void RegisterCvars()
 {

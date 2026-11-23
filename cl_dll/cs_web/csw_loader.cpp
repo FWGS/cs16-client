@@ -13,6 +13,7 @@
 namespace csw
 {
 
+Cvars cv;
 State g;
 
 // The CSWeb library sits next to the client library.

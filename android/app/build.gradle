@@ -74,12 +74,12 @@ android {
 
 		create("servo") {
 			initWith(getByName("release"))
-			applicationIdSuffix = ".csweb"
-			signingConfig = signingConfigs.debug
+			applicationIdSuffix = ".test"
+			signingConfig = signingConfigs.continuous
 
 			externalNativeBuild {
                 cmake {
-                    arguments "-DCMAKE_BUILD_TYPE=Release"
+                    arguments "-DCMAKE_BUILD_TYPE=Release", "-DBUILD_CSWEB=ON"
                 }
 			}
 		}

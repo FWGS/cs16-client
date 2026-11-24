@@ -1,4 +1,5 @@
 #include "hud.h"
+#include "chrome/chrome_host.h"
 #include "usercmd.h"
 #include "cvardef.h"
 #include "kbutton.h"
@@ -128,6 +129,29 @@ void IN_ClientMoveEvent( float forwardmove, float sidemove )
 
 void IN_ClientLookEvent( float relyaw, float relpitch )
 {
+	// the server MOTD window is shown: the mouse moves its cursor instead of turning the view.
+	// The engine gives the movement multiplied by m_yaw / m_pitch, so turn it back into pixels
+	if( Chrome::MotdCapturesMouse() )
+	{
+		static cvar_t *m_yaw = nullptr, *m_pitch = nullptr;
+
+		if( !m_yaw )
+			m_yaw = gEngfuncs.pfnGetCvarPointer( "m_yaw" );
+		if( !m_pitch )
+			m_pitch = gEngfuncs.pfnGetCvarPointer( "m_pitch" );
+
+		float yaw_step = m_yaw ? m_yaw->value : 0.022f;
+		float pitch_step = m_pitch ? m_pitch->value : 0.022f;
+
+		if( yaw_step > -0.0001f && yaw_step < 0.0001f )
+			yaw_step = 0.022f;
+		if( pitch_step > -0.0001f && pitch_step < 0.0001f )
+			pitch_step = 0.022f;
+
+		Chrome::MotdMouseDelta( -relyaw / yaw_step, relpitch / pitch_step );
+		return;
+	}
+
 	rel_yaw += relyaw;
 	rel_pitch += relpitch;
 }
@@ -231,7 +255,7 @@ void DLLEXPORT IN_MouseEvent( int mstate )
 			gEngfuncs.Key_Event( K_MOUSE1 + i, 0 );
 		}
 	}	
-	
+
 	mouse_oldbuttonstate = mstate;
 	bMouseInUse = true;
 }

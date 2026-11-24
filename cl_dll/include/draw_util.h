@@ -93,6 +93,13 @@ public:
 		return 3;
 	}
 
+	// the texts the client draws from the atlases of the fonts (hud/glyph_atlas.h); hud_textmode 1 asks for the
+	// font of the HUD instead
+	static inline bool UseAtlasText( void )
+	{
+		return !gHUD.hud_textmode->value;
+	}
+
 	static inline int DrawConsoleString(int x, int y, const char *string)
 	{
 		if ( gHUD.hud_textmode->value )
@@ -183,6 +190,15 @@ public:
 			FillRGBA( x,            y + tall - 1, wide - 1, 1,        255, 140, 0, 255 );
 		}
 	}
+
+	// Rectangles with rounded corners (the same rounding is used by all windows of the client)
+	static void FillRoundedRect( int x, int y, int wide, int tall, int radius, bool roundTop, bool roundBottom,
+								 int r, int g, int b, int a );
+	static void FillRoundedRectSides( int x, int y, int wide, int tall, int radius, bool roundLeft, bool roundRight,
+									  int r, int g, int b, int a );
+	static void DrawRoundedFrame( int x, int y, int wide, int tall, int radius, int r, int g, int b, int a );
+	static void DrawRoundedRectangle( int x, int y, int wide, int tall, int radius,
+									  int r = 0, int g = 0, int b = 0, int a = 153, bool drawStroke = true );
 
 	static void Draw2DQuad( float x1, float y1, float x2, float y2 );
 	static void DrawStretchPic( float x, float y, float w, float h,

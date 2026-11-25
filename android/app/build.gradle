@@ -6,7 +6,7 @@ apply plugin: "com.android.application"
 
 android {
 	namespace = "su.xash.cs16client"
-	ndkVersion = "26.3.11579264"
+	ndkVersion = "28.2.13676358"
 	compileSdk = 36
 
 	defaultConfig {
@@ -75,7 +75,7 @@ android {
 		create("servo") {
 			initWith(getByName("release"))
 			applicationIdSuffix = ".test"
-			signingConfig = signingConfigs.continuous
+			signingConfig = signingConfigs.debug
 
 			externalNativeBuild {
                 cmake {

@@ -45,9 +45,9 @@ check_symbol_exists(strlcat string.h HAVE_STRLCAT)
 
 include(YYThunks)
 
-if(BUILD_CSWEB)
-    add_subdirectory(3rdparty/csweb)
-endif()
+# if(BUILD_CSWEB)
+#     add_subdirectory(3rdparty/csweb)
+# endif()
 
 if(BUILD_CLIENT)
 	add_subdirectory(cl_dll)

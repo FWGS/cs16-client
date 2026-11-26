@@ -44,6 +44,7 @@
 *.autosave
 
 android/app/src/main/assets
+!android/app/src/main/jniLibs/**/libc++_shared.so
 *-build
 *admob-id.xml
 

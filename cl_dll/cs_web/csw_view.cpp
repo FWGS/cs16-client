@@ -123,7 +123,6 @@ void CSW_Draw( float w, float h, float posX, float posY )
 
     if( g.focus )
     {
-        csw::ClampCursor();
         gEngfuncs.pfnFillRGBABlend( (int)g.cx - 3, (int)g.cy - 3, 8, 8, 0, 0, 0, 255 );
         gEngfuncs.pfnFillRGBABlend( (int)g.cx - 2, (int)g.cy - 2, 6, 6, 255, 255, 255, 255 );
     }

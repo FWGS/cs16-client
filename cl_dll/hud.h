@@ -29,6 +29,7 @@
 
 #include <assert.h>
 #include <string.h>
+#include <string>
 
 #include "wrect.h"
 #include "cl_dll.h"
@@ -336,25 +337,38 @@ private:
 class CHudMOTD : public CHudBase
 {
 public:
-	int Init( void );
-	int VidInit( void );
-	int Draw( float flTime );
-	void Reset( void );
+    int Init( void );
+    int VidInit( void );
+    int Draw( float flTime );
+    void Reset( void );
 
-	CHudMsgFunc(MOTD);
-	void Scroll( int dir );
-	void Scroll( float amount );
-	float scroll;
-	bool m_bShow;
-	cvar_t *cl_motd_hide;
+    CHudMsgFunc(MOTD);
+    void Scroll( int dir );
+    void Scroll( float amount );
+    bool KeyEvent( int down, int keynum );
+
+    float scroll;
+    bool m_bShow;
+    cvar_t *cl_motd_hide;
+    std::string m_szUrl;
 
 protected:
-	static int MOTD_DISPLAY_TIME;
-	CUtlString m_szMOTD;
-	
-	int m_iLines;
-	int m_iMaxLength;
-	bool ignoreThisMotd;
+    struct Layout
+    {
+        int px, py, pw, ph;     // window
+        int bx, by, bw, bh;     // browser frame
+        int btnX, btnY;         // button
+    };
+
+    void CalcLayout( Layout &l ) const;
+    bool IsOverButton( const Layout &l ) const;
+
+    static int MOTD_DISPLAY_TIME;
+    CUtlString m_szMOTD;
+    bool m_bBrowserCreated;
+    bool m_bFocused;
+	bool m_bMouseFree;
+    int  m_iBrowserW, m_iBrowserH;
 };
 
 

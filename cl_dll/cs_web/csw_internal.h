@@ -53,6 +53,4 @@ struct State
 
 extern State g; // defined in csw_loader.cpp
 
-void ClampCursor(); // csw_input.cpp
-
 } // namespace csw

@@ -27,6 +27,10 @@
 #include "vgui_parser.h"
 #include "com_weapons.h"
 
+#ifdef _CSWEB_ENABLE
+#include "csw_interface.h"
+#endif
+
 extern int g_weaponselect;
 extern cl_enginefunc_t gEngfuncs;
 
@@ -370,6 +374,8 @@ int DLLEXPORT HUD_Key_Event( int down, int keynum, const char *pszCurrentBinding
 	if( g_pMenu )
 		g_pMenu->Key( keynum, down );
 
+	if( gHUD.m_MOTD.KeyEvent( down, keynum ) )
+		return down ? 0 : 1;
 	return 1;
 }
 
@@ -677,13 +683,8 @@ void DLLEXPORT CL_CreateMove ( float frametime, struct usercmd_s *cmd, int activ
 		cmd->upmove -= cl_upspeed->value * CL_KeyState (&in_down);
 
 		if ( !(in_klook.state & 1 ) )
-		{	
-			if(gHUD.m_MOTD.m_bShow)
-			{
-				gHUD.m_MOTD.scroll -= CL_KeyState (&in_forward);
-				gHUD.m_MOTD.scroll += CL_KeyState (&in_back);
-			}
-			else
+		{
+			if( !gHUD.m_MOTD.m_bShow )
 			{
 				cmd->forwardmove += cl_forwardspeed->value * CL_KeyState (&in_forward);
 				cmd->forwardmove -= cl_backspeed->value * CL_KeyState (&in_back);
@@ -778,9 +779,7 @@ int CL_ButtonBits( int bResetState )
 
 	if ( in_attack.state & 3 )
 	{
-		if(gHUD.m_MOTD.m_bShow)
-			gHUD.m_MOTD.Reset();
-		else
+		if( !gHUD.m_MOTD.m_bShow )
 			bits |= IN_ATTACK;
 	}
 	

@@ -1,4 +1,5 @@
-// Virtual cursor, focus and keyboard / mouse forwarding.
+// Mouse / keyboard forwarding. The cursor position comes from the engine
+// (see CHudMOTD::Draw), there is no virtual cursor.
 
 #include "csw_internal.h"
 #include "keydefs.h"
@@ -7,19 +8,6 @@
 #include "csw_log.h"
 
 using csw::g;
-
-namespace csw
-{
-
-void ClampCursor()
-{
-    if( g.cx < g.rx1 ) g.cx = g.rx1;
-    if( g.cx > g.rx2 ) g.cx = g.rx2;
-    if( g.cy < g.ry1 ) g.cy = g.ry1;
-    if( g.cy > g.ry2 ) g.cy = g.ry2;
-}
-
-} // namespace csw
 
 // Screen coordinates -> page coordinates.
 static bool ToPage( float sx, float sy, float &px, float &py )
@@ -32,10 +20,17 @@ static bool ToPage( float sx, float sy, float &px, float &py )
     return true;
 }
 
+// The cursor can be outside of the page (over the OK button, padding),
+// events with such coordinates are not sent to the page.
+static bool InPage( float sx, float sy )
+{
+    return sx >= g.rx1 && sx <= g.rx2 && sy >= g.ry1 && sy <= g.ry2;
+}
+
 static void Wheel( float dy )
 {
     float px, py;
-    if( ToPage( g.cx, g.cy, px, py ) )
+    if( InPage( g.cx, g.cy ) && ToPage( g.cx, g.cy, px, py ) )
         g.api.wheel( g.view, 0.0f, dy, px, py );
 }
 
@@ -90,6 +85,7 @@ bool CSW_HasFocus()
     return g.focus && g.view;
 }
 
+// Focus = the page receives keyboard and wheel events.
 void CSW_SetFocus( bool focus )
 {
     if( focus && !g.view )
@@ -97,40 +93,35 @@ void CSW_SetFocus( bool focus )
 
     if( focus && !g.focus )
     {
-        // start in the middle of the page
-        g.cx = ( g.rx1 + g.rx2 ) * 0.5f;
-        g.cy = ( g.ry1 + g.ry2 ) * 0.5f;
+        // force the next CSW_MouseMove to reach the page
+        g.cx = -1.0f;
+        g.cy = -1.0f;
     }
 
     g.focus = focus;
-    csw::Debug( "focus %s", focus ? "^2ON^7 ^5(Esc to leave)^7" : "^1OFF^7" );
 }
 
-void CSW_LookEvent( float relyaw, float relpitch )
+// Last known cursor position in screen coordinates.
+void CSW_MouseMove( int sx, int sy )
 {
     if( !g.view )
         return;
 
-    // yaw -= x * m_yaw, pitch += y * m_pitch.
-    float myaw = gEngfuncs.pfnGetCvarFloat( "m_yaw" );
-    float mpitch = gEngfuncs.pfnGetCvarFloat( "m_pitch" );
-    if( myaw == 0.0f ) myaw = 0.022f;
-    if( mpitch == 0.0f ) mpitch = 0.022f;
+    if( sx == (int)g.cx && sy == (int)g.cy )
+        return;
 
-    const float scale = csw::CursorScale();
-    g.cx += ( -relyaw / myaw ) * scale;
-    g.cy += ( relpitch / mpitch ) * scale;
-    csw::ClampCursor();
+    g.cx = (float)sx;
+    g.cy = (float)sy;
 
     float px, py;
-    if( ToPage( g.cx, g.cy, px, py ) )
+    if( InPage( g.cx, g.cy ) && ToPage( g.cx, g.cy, px, py ) )
         g.api.mouse_move( g.view, px, py );
 }
 
 void CSW_MouseButton( int button, bool down )
 {
     float px, py;
-    if( ToPage( g.cx, g.cy, px, py ) )
+    if( InPage( g.cx, g.cy ) && ToPage( g.cx, g.cy, px, py ) )
         g.api.mouse_button( g.view, button, down ? 1 : 0, px, py );
 }
 
@@ -145,11 +136,11 @@ bool CSW_Key( int down, int key )
     if( !CSW_HasFocus() )
         return false;
 
-    if( key == K_ESCAPE )
+    if( key == K_MOUSE1 || key == K_MOUSE2 || key == K_MOUSE3 )
     {
-        if( down )
-            CSW_SetFocus( false );
-        return true; // swallow Esc so the game menu does not open
+        int button = ( key == K_MOUSE1 ) ? 0 : ( key == K_MOUSE2 ) ? 2 : 1;
+        CSW_MouseButton( button, down != 0 );
+        return down != 0;
     }
 
     if( key == K_SHIFT || key == K_CTRL || key == K_ALT || key == K_CAPSLOCK )
@@ -158,7 +149,7 @@ bool CSW_Key( int down, int key )
     if( key == K_MWHEELUP || key == K_MWHEELDOWN )
     {
         if( down )
-            Wheel( key == K_MWHEELUP ? 3.0f : -3.0f ); // positive = scroll up
+            Wheel( key == K_MWHEELUP ? 15.0f : -15.0f ); // positive = scroll up
         return true;
     }
 

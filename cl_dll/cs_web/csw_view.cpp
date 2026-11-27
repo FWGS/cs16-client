@@ -128,6 +128,21 @@ void CSW_Draw( float w, float h, float posX, float posY )
     }
 }
 
+void CSW_Resize( int w, int h )
+{
+    if( !g.view )
+        return;
+
+    if( w <= 0 || h <= 0 )
+    {
+        csw::Warn( "invalid resize: %dx%d", w, h );
+        return;
+    }
+
+    g.api.resize( g.view, (uint32_t)w, (uint32_t)h );
+    csw::Debug( "view resized: %dx%d", w, h );
+}
+
 void CSW_LoadURL( const char *url )
 {
     if( g.view )

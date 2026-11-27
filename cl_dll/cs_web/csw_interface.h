@@ -8,6 +8,7 @@ void CSW_Destroy();
 bool CSW_Active();
 void CSW_Frame();
 void CSW_Draw( float w, float h, float posX, float posY );
+void CSW_Resize( int w, int h );
 bool CSW_HasFocus();
 void CSW_SetFocus( bool focus );
 bool CSW_Key( int down, int keynum );

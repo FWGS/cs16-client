@@ -347,14 +347,26 @@ public:
 	float scroll;
 	bool m_bShow;
 	cvar_t *cl_hide_motd;
+	cvar_t *cl_motd_browser;
+	cvar_t *cl_motd_browser_iframe;
 
 protected:
 	static int MOTD_DISPLAY_TIME;
+	bool HandleBrowserMOTD( const char *chunk, bool finished );
+	void ResetBrowserState( void );
+
 	CUtlString m_szMOTD;
 	
 	int m_iLines;
 	int m_iMaxLength;
 	bool ignoreThisMotd;
+
+	// MOTD in the browser of the system (Windows, Linux, the BSDs, Android)
+	enum { BROWSER_NONE = 0, BROWSER_URL, BROWSER_HTML };
+	bool m_bMotdStarted;
+	int m_iBrowserMode;
+	int m_iBrowserLen;
+	char m_szBrowserMOTD[16384];
 };
 
 

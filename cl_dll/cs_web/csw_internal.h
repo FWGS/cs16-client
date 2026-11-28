@@ -5,11 +5,7 @@
 
 #include "hud.h"
 #include "cl_util.h"
-#include "cl_dll.h"
-#include "cvardef.h"
-
 #include "csw_view.h" // 3rdparty/csweb
-
 #include <cstdint>
 
 namespace csw
@@ -46,8 +42,8 @@ struct State
     float    rx1 = 0, ry1 = 0, rx2 = 0, ry2 = 0; // last drawn rect (screen coords)
 
     // input
-    bool  focus = false;
-    float cx = 0, cy = 0; // virtual cursor, screen coords
+    int   lastMx = -1, lastMy = -1; // last real cursor position sent to the page
+    bool  mouseSent = false;
     bool  shift = false, ctrl = false, alt = false, caps = false;
 };
 

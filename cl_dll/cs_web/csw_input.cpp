@@ -4,8 +4,6 @@
 #include "csw_internal.h"
 #include "keydefs.h"
 #include "csw_interface.h"
-#include "csw_cvars.h"
-#include "csw_log.h"
 
 using csw::g;
 
@@ -15,22 +13,29 @@ static bool ToPage( float sx, float sy, float &px, float &py )
     if( !g.view || !g.texW || g.rx2 <= g.rx1 || g.ry2 <= g.ry1 )
         return false;
 
+    if( sx < g.rx1 || sx > g.rx2 || sy < g.ry1 || sy > g.ry2 )
+        return false;
+
     px = ( sx - g.rx1 ) / ( g.rx2 - g.rx1 ) * (float)g.texW;
     py = ( sy - g.ry1 ) / ( g.ry2 - g.ry1 ) * (float)g.texH;
     return true;
 }
 
-// The cursor can be outside of the page (over the OK button, padding),
-// events with such coordinates are not sent to the page.
+
 static bool InPage( float sx, float sy )
 {
     return sx >= g.rx1 && sx <= g.rx2 && sy >= g.ry1 && sy <= g.ry2;
 }
 
+static bool CursorToPage( float &px, float &py )
+{
+    return ToPage( (float)g.lastMx, (float)g.lastMy, px, py );
+}
+
 static void Wheel( float dy )
 {
     float px, py;
-    if( InPage( g.cx, g.cy ) && ToPage( g.cx, g.cy, px, py ) )
+    if( CursorToPage( px, py ) )
         g.api.wheel( g.view, 0.0f, dy, px, py );
 }
 
@@ -80,61 +85,42 @@ static uint32_t PrintableKey( int key )
     return (uint32_t)key;
 }
 
-bool CSW_HasFocus()
-{
-    return g.focus && g.view;
-}
-
-// Focus = the page receives keyboard and wheel events.
-void CSW_SetFocus( bool focus )
-{
-    if( focus && !g.view )
-        return;
-
-    if( focus && !g.focus )
-    {
-        // force the next CSW_MouseMove to reach the page
-        g.cx = -1.0f;
-        g.cy = -1.0f;
-    }
-
-    g.focus = focus;
-}
-
-// Last known cursor position in screen coordinates.
 void CSW_MouseMove( int sx, int sy )
 {
     if( !g.view )
         return;
 
-    if( sx == (int)g.cx && sy == (int)g.cy )
-        return;
-
-    g.cx = (float)sx;
-    g.cy = (float)sy;
+    const bool moved = sx != g.lastMx || sy != g.lastMy;
+    g.lastMx = sx;
+    g.lastMy = sy;
 
     float px, py;
-    if( InPage( g.cx, g.cy ) && ToPage( g.cx, g.cy, px, py ) )
-        g.api.mouse_move( g.view, px, py );
+    if( !ToPage( (float)sx, (float)sy, px, py ) )
+    {
+        g.mouseSent = false; // outside of the page
+        return;
+    }
+
+    if( !moved && g.mouseSent )
+        return;
+
+    g.mouseSent = true;
+    g.api.mouse_move( g.view, px, py );
 }
 
 void CSW_MouseButton( int button, bool down )
 {
     float px, py;
-    if( InPage( g.cx, g.cy ) && ToPage( g.cx, g.cy, px, py ) )
+    if( CursorToPage( px, py ) )
         g.api.mouse_button( g.view, button, down ? 1 : 0, px, py );
 }
 
 bool CSW_Key( int down, int key )
 {
-    // Modifier state is tracked even without focus, so it is right the moment focus starts.
     if( key == K_SHIFT ) g.shift = down != 0;
     else if( key == K_CTRL ) g.ctrl = down != 0;
     else if( key == K_ALT ) g.alt = down != 0;
     else if( key == K_CAPSLOCK && down ) g.caps = !g.caps;
-
-    if( !CSW_HasFocus() )
-        return false;
 
     if( key == K_MOUSE1 || key == K_MOUSE2 || key == K_MOUSE3 )
     {
@@ -160,5 +146,5 @@ bool CSW_Key( int down, int key )
     if( cp || special )
         g.api.key( g.view, down ? 1 : 0, cp, special, mods );
 
-    return true; // everything is swallowed while the page has focus
+    return true;
 }

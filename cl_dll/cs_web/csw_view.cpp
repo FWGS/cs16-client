@@ -55,14 +55,14 @@ bool CSW_Create( int w, int h, const char *url )
 
 void CSW_Destroy()
 {
-    g.focus = false;
-
     if( !g.view )
         return;
 
     g.api.destroy( g.view );
     g.view = nullptr;
     g.tex = 0; // the engine frees its textures on renderer shutdown
+    g.lastMx = g.lastMy = -1;
+    g.mouseSent = false;
 }
 
 bool CSW_Active()
@@ -120,12 +120,6 @@ void CSW_Draw( float w, float h, float posX, float posY )
     gEngfuncs.pTriAPI->Color4ub( 255, 255, 255, 255 );
     gRenderAPI.GL_Bind( 0, g.tex );
     DrawUtils::Draw2DQuad( posX, posY, posX + w, posY + h );
-
-    if( g.focus )
-    {
-        gEngfuncs.pfnFillRGBABlend( (int)g.cx - 3, (int)g.cy - 3, 8, 8, 0, 0, 0, 255 );
-        gEngfuncs.pfnFillRGBABlend( (int)g.cx - 2, (int)g.cy - 2, 6, 6, 255, 255, 255, 255 );
-    }
 }
 
 void CSW_Resize( int w, int h )

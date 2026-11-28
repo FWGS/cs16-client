@@ -51,7 +51,7 @@ android/app/src/main/assets
 build*/
 
 .vscode/
-
+.cache/
 .gradle/
 .externalNativeBuild
 .cxx/

@@ -82,7 +82,6 @@ void CSW_Frame()
     if( !g.api.acquire( g.view, &frame ) || !frame.pixels )
         return;
 
-    // A new texture is created when the dimensions change, otherwise the old one is updated.
     const bool recreate = !g.tex || frame.width != g.texW || frame.height != g.texH;
     if( recreate )
         g.texSerial++;
@@ -98,6 +97,9 @@ void CSW_Frame()
 
     if( recreate )
     {
+        if ( g.tex )
+            gRenderAPI.GL_FreeTexture( g.tex );
+        
         g.tex = tex;
         g.texW = frame.width;
         g.texH = frame.height;

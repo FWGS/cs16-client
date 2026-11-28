@@ -6,46 +6,6 @@
 #include "csw_cvars.h"
 #include "csw_log.h"
 
-#if defined(__ANDROID__) && defined(__aarch64__)
-    #define CSWEB_LIB_FILE "libcsweb_android_arm64.so"
-
-#elif defined(__ANDROID__) && defined(__arm__)
-    #define CSWEB_LIB_FILE "libcsweb_android_armv7.so"
-
-#elif defined(__ANDROID__) && defined(__x86_64__)
-    #define CSWEB_LIB_FILE "libcsweb_android_amd64.so"
-
-#elif defined(__ANDROID__) && defined(__i386__)
-    #define CSWEB_LIB_FILE "libcsweb_android_i686.so"
-
-#elif defined(_WIN64)
-    #define CSWEB_LIB_FILE "csweb_amd64.dll"
-
-#elif defined(_WIN32)
-    #define CSWEB_LIB_FILE "csweb.dll"
-
-#elif defined(__APPLE__) && defined(__aarch64__)
-    #define CSWEB_LIB_FILE "csweb_arm64.dylib"
-
-#elif defined(__APPLE__) && defined(__x86_64__)
-    #define CSWEB_LIB_FILE "csweb_amd64.dylib"
-
-#elif defined(__linux__) && defined(__aarch64__)
-    #define CSWEB_LIB_FILE "csweb_arm64.so"
-
-#elif defined(__linux__) && defined(__x86_64__)
-    #define CSWEB_LIB_FILE "csweb_amd64.so"
-
-#elif defined(__linux__) && defined(__arm__)
-    #define CSWEB_LIB_FILE "csweb_arm.so"
-
-#elif defined(__linux__) && defined(__i386__)
-    #define CSWEB_LIB_FILE "csweb.so"
-
-#else
-    #error "Unsupported platform or architecture"
-#endif
-
 namespace csw
 {
 

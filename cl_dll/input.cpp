@@ -27,6 +27,10 @@
 #include "vgui_parser.h"
 #include "com_weapons.h"
 
+#ifdef _CSWEB_ENABLE
+#include "csw_interface.h"
+#endif
+
 extern int g_weaponselect;
 extern cl_enginefunc_t gEngfuncs;
 
@@ -370,6 +374,8 @@ int DLLEXPORT HUD_Key_Event( int down, int keynum, const char *pszCurrentBinding
 	if( g_pMenu )
 		g_pMenu->Key( keynum, down );
 
+	if( gHUD.m_MOTD.KeyEvent( down, keynum ) )
+		return down ? 0 : 1;
 	return 1;
 }
 
@@ -393,24 +399,28 @@ void IN_ForwardDown(void)
 {
 	KeyDown(&in_forward);
 	gHUD.m_Spectator.HandleButtonsDown( IN_FORWARD );
+	gHUD.m_MOTD.HandleButtonsDown( IN_FORWARD );
 }
 
 void IN_ForwardUp(void)
 {
 	KeyUp(&in_forward);
 	gHUD.m_Spectator.HandleButtonsUp( IN_FORWARD );
+	gHUD.m_MOTD.HandleButtonsUp( IN_FORWARD );
 }
 
 void IN_BackDown(void)
 {
 	KeyDown(&in_back);
 	gHUD.m_Spectator.HandleButtonsDown( IN_BACK );
+	gHUD.m_MOTD.HandleButtonsDown( IN_BACK );
 }
 
 void IN_BackUp(void)
 {
 	KeyUp(&in_back);
 	gHUD.m_Spectator.HandleButtonsUp( IN_BACK );
+	gHUD.m_MOTD.HandleButtonsUp( IN_BACK );
 }
 void IN_LookupDown(void) {KeyDown(&in_lookup);}
 void IN_LookupUp(void) {KeyUp(&in_lookup);}
@@ -486,11 +496,13 @@ void IN_AttackDown(void)
 {
 	KeyDown( &in_attack );
 	gHUD.m_Spectator.HandleButtonsDown( IN_ATTACK );
+	gHUD.m_MOTD.HandleButtonsDown( IN_ATTACK );
 }
 
 void IN_AttackUp(void)
 {
 	KeyUp( &in_attack );
+	gHUD.m_MOTD.HandleButtonsUp( IN_ATTACK );
 	in_cancel = 0;
 }
 
@@ -677,13 +689,8 @@ void DLLEXPORT CL_CreateMove ( float frametime, struct usercmd_s *cmd, int activ
 		cmd->upmove -= cl_upspeed->value * CL_KeyState (&in_down);
 
 		if ( !(in_klook.state & 1 ) )
-		{	
-			if(gHUD.m_MOTD.m_bShow)
-			{
-				gHUD.m_MOTD.scroll -= CL_KeyState (&in_forward);
-				gHUD.m_MOTD.scroll += CL_KeyState (&in_back);
-			}
-			else
+		{
+			if( !gHUD.m_MOTD.m_bShow )
 			{
 				cmd->forwardmove += cl_forwardspeed->value * CL_KeyState (&in_forward);
 				cmd->forwardmove -= cl_backspeed->value * CL_KeyState (&in_back);
@@ -778,9 +785,7 @@ int CL_ButtonBits( int bResetState )
 
 	if ( in_attack.state & 3 )
 	{
-		if(gHUD.m_MOTD.m_bShow)
-			gHUD.m_MOTD.Reset();
-		else
+		if( !gHUD.m_MOTD.m_bShow )
 			bits |= IN_ATTACK;
 	}
 	
@@ -794,12 +799,12 @@ int CL_ButtonBits( int bResetState )
 		bits |= IN_JUMP;
 	}
 
-	if ( in_forward.state & 3 )
+	if ( ( in_forward.state & 3 ) && !gHUD.m_MOTD.m_bShow )
 	{
 		bits |= IN_FORWARD;
 	}
 	
-	if (in_back.state & 3)
+	if ( ( in_back.state & 3 ) && !gHUD.m_MOTD.m_bShow )
 	{
 		bits |= IN_BACK;
 	}

@@ -45,7 +45,12 @@ android {
 	}
 
 	signingConfigs {
-		debug {}
+		debug {
+			storeFile file("${rootDir}/debug.keystore")
+			storePassword "android"
+			keyAlias "androiddebugkey"
+			keyPassword "android"
+		}
 
 		continuous {
 			if (System.getenv('KEYSTORE_FILE_PATH') != null) {
@@ -70,6 +75,18 @@ android {
 			shrinkResources = true
 
 			proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.txt"
+		}
+
+		create("servo") {
+			initWith(getByName("release"))
+			applicationIdSuffix = ".test"
+			signingConfig = signingConfigs.debug
+
+			externalNativeBuild {
+                cmake {
+                    arguments "-DCMAKE_BUILD_TYPE=Release", "-DBUILD_CSWEB=ON"
+                }
+			}
 		}
 
 		create("continuous") {

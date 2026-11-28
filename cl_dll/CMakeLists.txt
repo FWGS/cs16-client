@@ -73,7 +73,19 @@ else()
 	add_definitions(-D_CRT_SECURE_NO_WARNINGS -D_CRT_NONSTDC_NO_DEPRECATE)
 endif()
 
+if(BUILD_CSWEB)
+	include_directories(cs_web)
+    file(GLOB CS_WEB_SRC "cs_web/*.cpp")
+    list(APPEND CS_CLIENT_SRC ${CS_WEB_SRC})
+	add_definitions(-D_CSWEB_ENABLE=1)
+endif()
+
 add_library(${CLIENT_LIB} SHARED ${CS_CLIENT_SRC})
+
+if(BUILD_CSWEB AND APPLE)
+	target_link_libraries(${CLIENT_LIB} PRIVATE "-framework OpenGL")
+	target_compile_options(${CLIENT_LIB} PRIVATE -Wno-deprecated-declarations)
+endif()
 
 set_target_postfix(${CLIENT_LIB})
 

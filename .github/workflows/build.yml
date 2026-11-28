@@ -57,6 +57,77 @@ jobs:
         with:
           name: Android
           path: android/CS16Client-Android.apk
+  android-csweb:
+    name: Android (CSWeb)
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout sources
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 1
+          submodules: recursive
+      - name: Fetch YaPB history
+        run: git -C 3rdparty/yapb fetch --unshallow origin
+      - name: Install dependencies
+        run: |
+          sudo dpkg --add-architecture i386
+          sudo apt-get update
+          sudo apt-get install ccache
+      - name: Setup Java
+        uses: actions/setup-java@v6
+        with:
+          java-version: 21
+          distribution: 'temurin'
+          cache: gradle
+      - name: Setup Rust
+        shell: bash
+        working-directory: 3rdparty/csweb/rust
+        run: |
+          CHANNEL=$(sed -nE 's/^channel *= *"([^"]+)".*/\1/p' rust-toolchain.toml)
+          echo "Pinned toolchain: $CHANNEL"
+          rustup toolchain install --profile minimal
+          rustup default "$CHANNEL"
+          rustup target add --toolchain "$CHANNEL" aarch64-linux-android armv7-linux-androideabi
+          rustc --version
+          rustup target list --installed
+      - name: Setup Cargo cache
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: Android-CSWeb-cargo-${{ hashFiles('3rdparty/csweb/rust/Cargo.lock') }}
+          restore-keys: |
+            Android-CSWeb-cargo-
+      - name: Setup compilation cache
+        uses: actions/cache@v6
+        with:
+          path: ~/.cache/ccache
+          key: Android-CSWeb-ccache-${{ github.sha }}
+          restore-keys: |
+            Android-CSWeb-ccache-${{ github.ref_name }}
+            Android-CSWeb-ccache-
+      - name: Build and Sign APK
+        env:
+          KEYSTORE_FILE_PATH: ${{ github.workspace }}/signingkey.jks
+          KEYSTORE_PASSWORD: ${{ secrets.KEY_STORE_PASSWORD }}
+          KEY_ALIAS: ${{ secrets.ALIAS }}
+          KEY_PASSWORD: ${{ secrets.KEY_PASSWORD }}
+        run: |
+          if [[ -n "${{ secrets.SIGNING_KEY }}" ]]; then
+            echo "${{ secrets.SIGNING_KEY }}" | base64 --decode > ${{ env.KEYSTORE_FILE_PATH }}
+          fi
+          # BUILD_CSWEB уже задан в externalNativeBuild { cmake } для этого варианта
+          ./gradlew assembleServo
+          APK=$(find app/build/outputs/apk -name '*.apk' | head -n 1)
+          echo "Found APK: $APK"
+          mv "$APK" CS16Client-CSWeb-Android.apk
+        working-directory: android
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: Android-CSWeb
+          path: android/CS16Client-CSWeb-Android.apk
   psvita:
     name: PS Vita
     runs-on: ubuntu-latest
@@ -115,15 +186,23 @@ jobs:
           name: PSVita
           path: build/*.zip
   windows:
-    name: Windows
+    name: Windows${{ matrix.csweb && ' (CSWeb)' || '' }}
     runs-on: windows-latest
     env:
       SCCACHE_DIR: ${{ github.workspace }}/.sccache
+      CARGO_HOME: C:\c
+      CARGO_NET_GIT_FETCH_WITH_CLI: 'true'
     strategy:
       matrix:
         arch: [ 'x86', 'amd64' ]
+        csweb: [ false, true ]
+        exclude:
+          - arch: x86
+            csweb: true
       fail-fast: false
     steps:
+      - name: Enable git long paths
+        run: git config --system core.longpaths true
       - name: Checkout sources
         uses: actions/checkout@v5
         with:
@@ -138,34 +217,68 @@ jobs:
       - name: Setup YY-Thunks
         if: matrix.arch == 'x86'
         run: bash scripts/setup_yy_thunks.sh
+      - name: Setup Rust
+        if: matrix.csweb
+        shell: bash
+        working-directory: 3rdparty/csweb/rust
+        run: |
+          CHANNEL=$(sed -nE 's/^channel *= *"([^"]+)".*/\1/p' rust-toolchain.toml)
+          echo "Pinned toolchain: $CHANNEL"
+          rustup toolchain install --profile minimal
+          rustup default "$CHANNEL"
+          rustc --version
+      - name: Setup Cargo cache
+        if: matrix.csweb
+        uses: actions/cache@v6
+        with:
+          path: |
+            C:\c\registry
+            C:\c\git
+          key: Windows-CSWeb-cargo-${{ hashFiles('3rdparty/csweb/rust/Cargo.lock') }}
+          restore-keys: |
+            Windows-CSWeb-cargo-
       - name: Setup compilation cache
         uses: actions/cache@v6
         with:
           path: ${{ env.SCCACHE_DIR }}
-          key: sccache-${{ runner.os }}-${{ matrix.arch }}-${{ github.sha }}
+          key: sccache-${{ runner.os }}-${{ matrix.arch }}${{ matrix.csweb && '-csweb' || '' }}-${{ github.sha }}
           restore-keys: |
-            sccache-${{ runner.os }}-${{ matrix.arch }}-${{ github.ref_name }}
-            sccache-${{ runner.os }}-${{ matrix.arch }}-
+            sccache-${{ runner.os }}-${{ matrix.arch }}${{ matrix.csweb && '-csweb' || '' }}-${{ github.ref_name }}
+            sccache-${{ runner.os }}-${{ matrix.arch }}${{ matrix.csweb && '-csweb' || '' }}-
       - name: Setup sccache
         uses: mozilla-actions/sccache-action@v0.0.11
       - name: Configure
-        run: cmake -DCMAKE_POLICY_DEFAULT_CMP0141=NEW --preset "win32-ci-${{ matrix.arch }}"
+        run: cmake -DCMAKE_POLICY_DEFAULT_CMP0141=NEW ${{ matrix.csweb && '-DBUILD_CSWEB=ON' || '' }} --preset "win32-ci-${{ matrix.arch }}"
       - name: Build and Package
         run: |
           cmake --build .
           cpack --config CPackConfig.cmake
         working-directory: build
+      - name: Rename CSWeb package
+        if: matrix.csweb
+        shell: bash
+        working-directory: build
+        run: |
+          for f in CS16Client-*.zip; do
+            [[ "$f" == CS16Client-CSWeb-* ]] && continue
+            mv "$f" "CS16Client-CSWeb-${f#CS16Client-}"
+          done
+          ls -la *.zip
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ runner.os }}-${{ matrix.arch }}
+          name: ${{ runner.os }}-${{ matrix.arch }}${{ matrix.csweb && '-CSWeb' || '' }}
           path: build/*.zip
   linux:
-    name: Linux
+    name: Linux${{ matrix.csweb && ' (CSWeb)' || '' }}
     runs-on: ubuntu-latest
     strategy:
       matrix:
         arch: [ 'i386', 'amd64' ]
+        csweb: [ false, true ]
+        exclude:
+          - arch: i386
+            csweb: true
       fail-fast: false
     steps:
       - name: Checkout sources
@@ -182,31 +295,67 @@ jobs:
           sudo apt-get install libatomic1:i386 libgcc-s1:i386 \
             libstdc++6:i386 gcc-multilib g++-multilib \
             ninja-build libfontconfig-dev:i386 libfontconfig-dev ccache
+      - name: Install CSWeb dependencies
+        if: matrix.csweb
+        run: |
+          sudo apt-get install clang libclang-dev libssl-dev libudev-dev \
+            libdbus-1-dev libfreetype-dev libegl1-mesa-dev libgl1-mesa-dev \
+            libx11-dev libxcb1-dev pkg-config python3
+      - name: Setup Rust
+        if: matrix.csweb
+        shell: bash
+        working-directory: 3rdparty/csweb/rust
+        run: |
+          CHANNEL=$(sed -nE 's/^channel *= *"([^"]+)".*/\1/p' rust-toolchain.toml)
+          echo "Pinned toolchain: $CHANNEL"
+          rustup toolchain install --profile minimal
+          rustup default "$CHANNEL"
+          rustc --version
+      - name: Setup Cargo cache
+        if: matrix.csweb
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: Linux-CSWeb-cargo-${{ hashFiles('3rdparty/csweb/rust/Cargo.lock') }}
+          restore-keys: |
+            Linux-CSWeb-cargo-
       - name: Setup compilation cache
         uses: hendrikmuhs/ccache-action@v1.2.24
         with:
-          key: ${{ runner.os }}-${{ matrix.arch }}-ccache-${{ github.sha }}
+          key: ${{ runner.os }}-${{ matrix.arch }}${{ matrix.csweb && '-csweb' || '' }}-ccache-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.arch }}-ccache-${{ github.ref_name }}
-            ${{ runner.os }}-${{ matrix.arch }}-ccache-
+            ${{ runner.os }}-${{ matrix.arch }}${{ matrix.csweb && '-csweb' || '' }}-ccache-${{ github.ref_name }}
+            ${{ runner.os }}-${{ matrix.arch }}${{ matrix.csweb && '-csweb' || '' }}-ccache-
       - name: Configure
-        run: cmake --preset "linux-ci-${{ matrix.arch }}"
+        run: cmake ${{ matrix.csweb && '-DBUILD_CSWEB=ON' || '' }} --preset "linux-ci-${{ matrix.arch }}"
       - name: Build and Package
         run: |
           cmake --build .
           cpack --config CPackConfig.cmake
         working-directory: build
+      - name: Rename CSWeb package
+        if: matrix.csweb
+        working-directory: build
+        run: |
+          for f in CS16Client-*.tar.gz; do
+            [[ "$f" == CS16Client-CSWeb-* ]] && continue
+            mv "$f" "CS16Client-CSWeb-${f#CS16Client-}"
+          done
+          ls -la *.tar.gz
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ runner.os }}-${{ matrix.arch }}
+          name: ${{ runner.os }}-${{ matrix.arch }}${{ matrix.csweb && '-CSWeb' || '' }}
           path: build/*.tar.gz
   macos:
-    name: macOS
+    name: macOS${{ matrix.csweb && ' (CSWeb)' || '' }}
     strategy:
       matrix:
         os: [ 'macos-15-intel', 'macos-latest' ]
         arch: [ 'x86_64', 'arm64' ]
+        csweb: [ false, true ]
         exclude:
           - os: macos-15-intel
             arch: arm64
@@ -214,6 +363,8 @@ jobs:
             arch: x86_64
       fail-fast: false
     runs-on: ${{ matrix.os }}
+    # macOS x86_64 + CSWeb пока экспериментальный: его падение не должно ломать релиз
+    continue-on-error: ${{ matrix.csweb && matrix.arch == 'x86_64' }}
     steps:
       - name: Checkout sources
         uses: actions/checkout@v5
@@ -224,30 +375,59 @@ jobs:
         run: git -C 3rdparty/yapb fetch --unshallow origin
       - name: Install dependencies
         run: brew install cmake ninja fontconfig ccache
+      - name: Setup Rust
+        if: matrix.csweb
+        shell: bash
+        working-directory: 3rdparty/csweb/rust
+        run: |
+          CHANNEL=$(sed -nE 's/^channel *= *"([^"]+)".*/\1/p' rust-toolchain.toml)
+          echo "Pinned toolchain: $CHANNEL"
+          rustup toolchain install --profile minimal
+          rustup default "$CHANNEL"
+          rustc --version
+      - name: Setup Cargo cache
+        if: matrix.csweb
+        uses: actions/cache@v6
+        with:
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+          key: macOS-${{ matrix.arch }}-CSWeb-cargo-${{ hashFiles('3rdparty/csweb/rust/Cargo.lock') }}
+          restore-keys: |
+            macOS-${{ matrix.arch }}-CSWeb-cargo-
       - name: Setup compilation cache
         uses: hendrikmuhs/ccache-action@v1.2.24
         with:
-          key: ${{ runner.os }}-${{ matrix.arch }}-ccache-${{ github.sha }}
+          key: ${{ runner.os }}-${{ matrix.arch }}${{ matrix.csweb && '-csweb' || '' }}-ccache-${{ github.sha }}
           restore-keys: |
-            ${{ runner.os }}-${{ matrix.arch }}-ccache-${{ github.ref_name }}
-            ${{ runner.os }}-${{ matrix.arch }}-ccache-
+            ${{ runner.os }}-${{ matrix.arch }}${{ matrix.csweb && '-csweb' || '' }}-ccache-${{ github.ref_name }}
+            ${{ runner.os }}-${{ matrix.arch }}${{ matrix.csweb && '-csweb' || '' }}-ccache-
       - name: Configure
-        run: cmake --preset "macos-ci-${{ matrix.arch }}"
+        run: cmake ${{ matrix.csweb && '-DBUILD_CSWEB=ON' || '' }} --preset "macos-ci-${{ matrix.arch }}"
       - name: Build and Package
         run: |
           cmake --build .
           cpack --config CPackConfig.cmake
         working-directory: build
+      - name: Rename CSWeb package
+        if: matrix.csweb
+        working-directory: build
+        run: |
+          for f in CS16Client-*.zip; do
+            [[ "$f" == CS16Client-CSWeb-* ]] && continue
+            mv "$f" "CS16Client-CSWeb-${f#CS16Client-}"
+          done
+          ls -la *.zip
       - name: Upload artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: ${{ runner.os }}-${{ matrix.arch }}
+          name: ${{ runner.os }}-${{ matrix.arch }}${{ matrix.csweb && '-CSWeb' || '' }}
           path: build/*.zip
   release:
     name: Release
     runs-on: ubuntu-latest
     if: github.ref == 'refs/heads/main' && always()
-    needs: [ android, windows, linux, psvita, macos ]
+    needs: [ android, android-csweb, windows, linux, psvita, macos ]
     steps:
       - name: Fetch artifacts
         uses: actions/download-artifact@v8

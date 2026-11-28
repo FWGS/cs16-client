@@ -29,6 +29,7 @@
 
 #include <assert.h>
 #include <string.h>
+#include <string>
 
 #include "wrect.h"
 #include "cl_dll.h"
@@ -336,25 +337,43 @@ private:
 class CHudMOTD : public CHudBase
 {
 public:
-	int Init( void );
-	int VidInit( void );
-	int Draw( float flTime );
-	void Reset( void );
+    int Init( void );
+    int VidInit( void );
+    int Draw( float flTime );
+    void Reset( void );
 
-	CHudMsgFunc(MOTD);
-	void Scroll( int dir );
-	void Scroll( float amount );
-	float scroll;
-	bool m_bShow;
-	cvar_t *cl_hide_motd;
+    CHudMsgFunc(MOTD);
+    void Scroll( int dir );
+    void Scroll( float amount );
+    bool KeyEvent( int down, int keynum );
+    bool CreateBrowser( const char *url );
+	void HandleButtonsDown( int ButtonPressed );
+    void HandleButtonsUp( int ButtonPressed );
+
+    float scroll;
+    bool m_bShow;
+    cvar_t *cl_motd_hide;
 
 protected:
-	static int MOTD_DISPLAY_TIME;
-	CUtlString m_szMOTD;
-	
-	int m_iLines;
-	int m_iMaxLength;
-	bool ignoreThisMotd;
+    struct Layout
+    {
+        int px, py, pw, ph;     // window
+        int bx, by, bw, bh;     // browser frame
+        int btnX, btnY;         // OK button
+        int scrUpX, scrDownX;   // scroll buttons (mobile), y = btnY
+    };
+
+	void UpdateTouch( const Layout &l );
+    void CalcLayout( Layout &l ) const;
+    bool IsOverButton( const Layout &l ) const;
+
+    int  m_iTouchX, m_iTouchY;
+	int  m_iButtons; 
+    int  m_iBrowserW, m_iBrowserH;
+	Layout m_touchLayout;       // layout the touch buttons were created for
+    static int MOTD_DISPLAY_TIME;
+    CUtlString m_szMOTD;
+    CUtlString m_szUrl;
 };
 
 

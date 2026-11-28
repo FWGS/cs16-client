@@ -113,6 +113,17 @@ static void SendPageClick( bool down )
 }
 #endif
 
+static inline float HudScaleX() { return (float)TrueWidth  / (float)ScreenWidth; }
+static inline float HudScaleY() { return (float)TrueHeight / (float)ScreenHeight; }
+
+static void GetCursorHud( int &x, int &y )
+{
+	int mx, my;
+	gEngfuncs.GetMousePosition( &mx, &my );
+	x = (int)( mx / HudScaleX() );
+	y = (int)( my / HudScaleY() );
+}
+
 // ------------------------------------------------------------------ console commands
 void Close_f( void )
 {
@@ -234,7 +245,7 @@ void CHudMOTD :: CalcLayout( Layout &l ) const
 bool CHudMOTD :: IsOverButton( const Layout &l ) const
 {
 	int mx, my;
-	gEngfuncs.GetMousePosition( &mx, &my );
+	GetCursorHud( mx, my );
 
 	return mx >= l.btnX && mx < l.btnX + MOTD_BTN_W &&
 	       my >= l.btnY && my < l.btnY + MOTD_BTN_H;
@@ -379,13 +390,13 @@ int CHudMOTD :: Draw( float fTime )
 		DrawUtils::DrawHudString( l.scrDownX + ( MOTD_SCR_W - DrawUtils::HudStringLen( "Dn" ) ) / 2, sty, ScreenWidth, "Dn", 255, 180, 0 );
 	}
 
-	// the real cursor is forwarded to the page every frame
 	int mx, my;
 	gEngfuncs.GetMousePosition( &mx, &my );
 	CSW_MouseMove( mx, my );
 
-	// page
-	CSW_Draw( l.bw, l.bh, l.bx, l.by );
+	const float sx = HudScaleX();
+	const float sy = HudScaleY();
+	CSW_Draw( l.bw * sx, l.bh * sy, l.bx * sx, l.by * sy );
 #endif
 
 	return 1;

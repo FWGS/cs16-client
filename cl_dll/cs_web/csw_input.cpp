@@ -2,8 +2,9 @@
 // (see CHudMOTD::Draw), there is no virtual cursor.
 
 #include "csw_internal.h"
-#include "keydefs.h"
 #include "csw_interface.h"
+#include "csw_cvars.h"
+#include "keydefs.h"
 
 using csw::g;
 
@@ -110,10 +111,9 @@ void CSW_MouseButton( int button, bool down )
 
 void CSW_Scroll( float dy )
 {
-    if( !g.view || !g.texW )
-        return;
-
-    g.api.wheel( g.view, 0.0f, dy, (float)g.texW * 0.5f, (float)g.texH * 0.5f );
+    float px, py;
+    if( CursorToPage( px, py ) )
+        g.api.wheel( g.view, 0.0f, dy * csw::ScrollScale(), px, py );
 }
 
 bool CSW_Key( int down, int key )

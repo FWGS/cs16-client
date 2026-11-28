@@ -21,100 +21,99 @@
 #include "hud.h"
 #include "cl_util.h"
 #include "parsemsg.h"
-#include "kbutton.h"
-#include "triangleapi.h"
 #include <string.h>
 #include <stdio.h>
-#include <string>
 #include "draw_util.h"
-#include "build.h"
+
 #include "keydefs.h"
 #ifdef _CSWEB_ENABLE
 #include "csw_interface.h"
 #endif
 
 // ------------------------------------------------------------------ layout
-#define MOTD_PAD       16
-#define MOTD_BTN_W     120
-#define MOTD_BTN_H     24
-#define MOTD_BTN_GAP   12
-#define MOTD_MAX_W     800
-#define MOTD_MAX_H     600
-#define MOTD_MARGIN    30
-#define MOTD_TEXT_H    13   // высота строки шрифта HUD
+#define MOTD_PAD          16
+#define MOTD_BTN_W        120
+#define MOTD_BTN_H        32
+#define MOTD_BTN_GAP      24
+#define MOTD_MARGIN       30
+#define MOTD_TEXT_H       13
+#define MOTD_SCR_W        40
+#define MOTD_SCR_GAP      8
+#define MOTD_SCROLL_SPEED 20.0f // lines per second
 
-// ------------------------------------------------------------------ mouse
-static void MotdSetMouseVisible( bool visible )
-{
-	gEngfuncs.pfnSetMouseEnable( !visible );
-}
+// Interpolation anchors: screen size -> browser size.
+// The width is taken from ScreenWidth, the height from ScreenHeight.
+struct MOTDPoint { int screen, size; };
 
-static bool MotdGetMouse( int &x, int &y )
-{
-	gEngfuncs.GetMousePosition( &x, &y );
-	return true;
-}
+static const MOTDPoint s_BrowserW[] = { { 640, 450 }, { 800, 590 }, { 1024, 760 }, { 1600, 960 } };
+static const MOTDPoint s_BrowserH[] = { { 480, 400 }, { 600, 460 }, { 768, 600 }, { 1200, 850 } };
 
 // ------------------------------------------------------------------ helpers
-static std::string MakeDataUrl( const std::string &html )
+// Piecewise linear interpolation between the anchors. Below the first anchor
+// the size is proportional, above the last one the last segment is extrapolated.
+template<size_t N>
+static int MOTDInterp( const MOTDPoint ( &t )[N], int v )
 {
-	static const char tbl[] =
-		"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+	if( v <= t[0].screen )
+		return t[0].size * v / t[0].screen;
 
-	const unsigned char *s = (const unsigned char *)html.data();
-	size_t len = html.size();
+	size_t i = 0;
+	while( i + 2 < N && v > t[i + 1].screen )
+		i++;
 
-	std::string out = "data:text/html;charset=utf-8;base64,";
-	out.reserve( out.size() + ( len + 2 ) / 3 * 4 );
-
-	for( size_t i = 0; i < len; i += 3 )
-	{
-		unsigned v = s[i] << 16;
-		if( i + 1 < len ) v |= s[i + 1] << 8;
-		if( i + 2 < len ) v |= s[i + 2];
-
-		out += tbl[( v >> 18 ) & 63];
-		out += tbl[( v >> 12 ) & 63];
-		out += ( i + 1 < len ) ? tbl[( v >> 6 ) & 63] : '=';
-		out += ( i + 2 < len ) ? tbl[v & 63] : '=';
-	}
-	return out;
+	return t[i].size + ( v - t[i].screen ) * ( t[i + 1].size - t[i].size ) / ( t[i + 1].screen - t[i].screen );
 }
 
-// Обычный текст оборачиваем в экранированный <pre>
-static std::string TextToHtml( const char *text )
+static CUtlString MakeDataUrl( const CUtlString &html )
 {
-	std::string out =
+	CUtlString url( "data:text/html;charset=utf-8;base64," );
+	url.AppendBase64( (const uint8_t *)html.String(), html.Length() );
+	return url;
+}
+
+// Plain text is wrapped into an escaped <pre>.
+static CUtlString TextToHtml( const char *text )
+{
+	CUtlString esc( text );
+	esc.Replace( "&", "&amp;" ); // '&' must be replaced first
+	esc.Replace( "<", "&lt;" );
+	esc.Replace( ">", "&gt;" );
+
+	CUtlString out(
 		"<!DOCTYPE html><meta charset=\"utf-8\">"
 		"<body style=\"margin:8px;background:#111;color:#ffb400;font:14px monospace\">"
-		"<pre style=\"white-space:pre-wrap;margin:0\">";
-
-	for( ; *text; text++ )
-	{
-		switch( *text )
-		{
-		case '<': out += "&lt;";  break;
-		case '>': out += "&gt;";  break;
-		case '&': out += "&amp;"; break;
-		default:  out += *text;   break;
-		}
-	}
+		"<pre style=\"white-space:pre-wrap;margin:0\">" );
+	out += esc;
 	out += "</pre></body>";
 	return out;
 }
 
-static bool StartsWithNoCase( const char *s, const char *prefix )
+// Invisible client touch button; coordinates are normalized to the screen.
+static void AddTouchButton( const char *name, const char *cmd, int x, int y, int w, int h )
 {
-	while( *prefix )
-	{
-		char a = *s++, b = *prefix++;
-		if( a >= 'A' && a <= 'Z' ) a += 32;
-		if( a != b ) return false;
-	}
-	return true;
+	static byte color[4] = { 0, 0, 0, 0 };
+
+	gMobileAPI.pfnTouchAddClientButton( name, "*white", cmd,
+		(float)x / ScreenWidth,
+		(float)y / ScreenHeight,
+		(float)( x + w ) / ScreenWidth,
+		(float)( y + h ) / ScreenHeight,
+		color, 0, 1.0f, 0 );
 }
 
-// ------------------------------------------------------------------ commands
+#ifdef _CSWEB_ENABLE
+// Page click for touch input. The cursor position is refreshed first,
+// so the click lands where the finger is.
+static void SendPageClick( bool down )
+{
+	int mx, my;
+	gEngfuncs.GetMousePosition( &mx, &my );
+	CSW_MouseMove( mx, my );
+	CSW_MouseButton( 0, down );
+}
+#endif
+
+// ------------------------------------------------------------------ console commands
 void Close_f( void )
 {
 	gHUD.m_MOTD.Reset();
@@ -125,18 +124,12 @@ void OpenURL_f( void )
 	if( gEngfuncs.Cmd_Argc() < 2 )
 		return;
 
-#ifdef _CSWEB_ENABLE
-	gHUD.m_MOTD.Reset();
-	gHUD.m_MOTD.m_szUrl = gEngfuncs.Cmd_Argv( 1 );
-	gHUD.m_MOTD.m_iFlags |= HUD_DRAW;
-	gHUD.m_MOTD.m_bShow = true;
-#endif
+	gHUD.m_MOTD.CreateBrowser( gEngfuncs.Cmd_Argv( 1 ) );
 }
 
-// ------------------------------------------------------------------ CHudMOTD
+// ------------------------------------------------------------------ lifecycle
 int CHudMOTD :: Init( void )
 {
-	m_bMouseFree = false;
 	gHUD.AddHudElem( this );
 
 	HOOK_MESSAGE( gHUD.m_MOTD, MOTD );
@@ -159,70 +152,101 @@ void CHudMOTD :: Reset( void )
 {
 	m_iFlags &= ~HUD_DRAW;
 	m_szMOTD.Clear();
-	m_szUrl.clear();
 	m_bShow = false;
-	m_bBrowserCreated = false;
-	m_bFocused = false;
+	m_iButtons = 0;
+	m_iBrowserW = m_iBrowserH = 0;
+	memset( &m_touchLayout, 0xFF, sizeof( m_touchLayout ) ); // never equal to a real layout
+
+	if( g_iMobileAPIVersion )
+	{
+		gMobileAPI.pfnTouchRemoveButton( "_motd_*" );
+		gMobileAPI.pfnTouchSetClientOnly( false );
+	}
+
 #ifdef _CSWEB_ENABLE
-	CSW_SetFocus( false );
 	CSW_Destroy();
 #endif
-	if( m_bMouseFree )
-	{
-		MotdSetMouseVisible( false );
-		m_bMouseFree = false;
-	}
 }
 
+// Creates the browser and opens the window. Any previous window is closed first.
+bool CHudMOTD :: CreateBrowser( const char *url )
+{
+	Reset();
+
+#ifdef _CSWEB_ENABLE
+	Layout l;
+	CalcLayout( l );
+
+	if( !CSW_Create( l.bw, l.bh, url ) )
+		return false;
+
+	m_szUrl = url;
+	m_iBrowserW = l.bw;
+	m_iBrowserH = l.bh;
+	m_iFlags |= HUD_DRAW;
+	m_bShow = true;
+
+	if( g_iMobileAPIVersion )
+		gMobileAPI.pfnTouchSetClientOnly( true );
+	UpdateTouch( l );
+
+	return true;
+#else
+	return false;
+#endif
+}
+
+// ------------------------------------------------------------------ layout
 void CHudMOTD :: CalcLayout( Layout &l ) const
 {
-	const int maxW = MOTD_MAX_W + MOTD_PAD * 2;
-	const int maxH = MOTD_MAX_H + MOTD_PAD * 2 + MOTD_BTN_GAP + MOTD_BTN_H;
+	const int chromeW = MOTD_PAD * 2;
+	const int chromeH = MOTD_PAD * 2 + MOTD_BTN_GAP + MOTD_BTN_H;
 
-	l.pw = ScreenWidth  - MOTD_MARGIN * 2;
-	l.ph = ScreenHeight - MOTD_MARGIN * 2;
-	if( l.pw > maxW ) l.pw = maxW;
-	if( l.ph > maxH ) l.ph = maxH;
+	// browser size from the table, but never larger than what fits on the screen
+	l.bw = MOTDInterp( s_BrowserW, ScreenWidth );
+	l.bh = MOTDInterp( s_BrowserH, ScreenHeight );
 
+	const int maxBw = ScreenWidth  - MOTD_MARGIN * 2 - chromeW;
+	const int maxBh = ScreenHeight - MOTD_MARGIN * 2 - chromeH;
+	if( l.bw > maxBw ) l.bw = maxBw;
+	if( l.bh > maxBh ) l.bh = maxBh;
+	if( l.bw < 1 ) l.bw = 1;
+	if( l.bh < 1 ) l.bh = 1;
+
+	// window frame around the browser, centered on the screen
+	l.pw = l.bw + chromeW;
+	l.ph = l.bh + chromeH;
 	l.px = ( ScreenWidth  - l.pw ) / 2;
 	l.py = ( ScreenHeight - l.ph ) / 2;
 
-	// браузер: внутри рамки с padding, над кнопкой
-	l.bw = l.pw - MOTD_PAD * 2;
-	l.bh = l.ph - MOTD_PAD * 2 - MOTD_BTN_GAP - MOTD_BTN_H;
 	l.bx = l.px + MOTD_PAD;
 	l.by = l.py + MOTD_PAD;
 
-	// кнопка OK: по центру внизу
+	// OK button: bottom center
 	l.btnX = l.px + ( l.pw - MOTD_BTN_W ) / 2;
 	l.btnY = l.py + l.ph - MOTD_PAD - MOTD_BTN_H;
+
+	// scroll buttons: right end of the bottom row
+	l.scrDownX = l.px + l.pw - MOTD_PAD - MOTD_SCR_W;
+	l.scrUpX   = l.scrDownX - MOTD_SCR_GAP - MOTD_SCR_W;
 }
 
 bool CHudMOTD :: IsOverButton( const Layout &l ) const
 {
 	int mx, my;
-	if( !MotdGetMouse( mx, my ) )
-		return false;
+	gEngfuncs.GetMousePosition( &mx, &my );
 
 	return mx >= l.btnX && mx < l.btnX + MOTD_BTN_W &&
 	       my >= l.btnY && my < l.btnY + MOTD_BTN_H;
 }
 
-// Вызывать из HUD_Key_Event. true = клавиша обработана окном.
+// ------------------------------------------------------------------ input
+// Called from HUD_Key_Event: raw keys and the mouse (desktop).
+// true = the key is handled by the window.
 bool CHudMOTD :: KeyEvent( int down, int keynum )
 {
-#ifdef _CSWEB_ENABLE
-	// Без окна CSW_Key только отслеживает модификаторы (Shift/Ctrl/Alt/Caps),
-	// чтобы их состояние было верным в момент открытия MOTD.
-	if( !m_bShow )
-	{
-		// CSW_Key( down, keynum );
-		return false;
-	}
-#else
 	if( !m_bShow )
 		return false;
-#endif
 
 	if( keynum == K_ESCAPE )
 	{
@@ -231,6 +255,7 @@ bool CHudMOTD :: KeyEvent( int down, int keynum )
 		return true;
 	}
 
+	// click on OK: close on release
 	if( keynum == K_MOUSE1 )
 	{
 		Layout l;
@@ -238,10 +263,9 @@ bool CHudMOTD :: KeyEvent( int down, int keynum )
 		if( IsOverButton( l ) )
 		{
 			if( !down )
-				Reset();       // закрываем по отпусканию
+				Reset();
 			return true;
 		}
-		// иначе клик по странице: падаем дальше в CSW_Key
 	}
 
 #ifdef _CSWEB_ENABLE
@@ -251,6 +275,52 @@ bool CHudMOTD :: KeyEvent( int down, int keynum )
 #endif
 }
 
+// Called from the +forward / +back / +attack handlers (see input.cpp).
+// On Android in client-only mode touches arrive only as such commands,
+// from the client touch buttons created in UpdateTouch.
+void CHudMOTD :: HandleButtonsDown( int ButtonPressed )
+{
+	if( !m_bShow )
+		return;
+
+	m_iButtons |= ButtonPressed & ( IN_FORWARD | IN_BACK | IN_ATTACK );
+
+#ifdef _CSWEB_ENABLE
+	if( ButtonPressed & IN_ATTACK )
+		SendPageClick( true );
+#endif
+}
+
+void CHudMOTD :: HandleButtonsUp( int ButtonPressed )
+{
+	// only buttons that were pressed through HandleButtonsDown count,
+	// so a desktop mouse release (which still reaches -attack) is ignored here
+	const int released = m_iButtons & ButtonPressed & ( IN_FORWARD | IN_BACK | IN_ATTACK );
+	m_iButtons &= ~released;
+
+#ifdef _CSWEB_ENABLE
+	if( released & IN_ATTACK )
+		SendPageClick( false );
+#endif
+}
+
+// ------------------------------------------------------------------ touch
+// (Re)creates the client touch buttons for the given layout.
+void CHudMOTD :: UpdateTouch( const Layout &l )
+{
+	m_touchLayout = l;
+
+	if( !g_iMobileAPIVersion )
+		return;
+
+	gMobileAPI.pfnTouchRemoveButton( "_motd_*" );
+	AddTouchButton( "_motd_page", "+attack",       l.bx,       l.by,   l.bw,       l.bh );
+	AddTouchButton( "_motd_ok",   "cl_motd_close", l.btnX,     l.btnY, MOTD_BTN_W, MOTD_BTN_H );
+	AddTouchButton( "_motd_up",   "+forward",      l.scrUpX,   l.btnY, MOTD_SCR_W, MOTD_BTN_H );
+	AddTouchButton( "_motd_down", "+back",         l.scrDownX, l.btnY, MOTD_SCR_W, MOTD_BTN_H );
+}
+
+// ------------------------------------------------------------------ drawing
 int CHudMOTD :: Draw( float fTime )
 {
 	gHUD.m_iNoConsolePrint &= ~( 1 << 1 );
@@ -267,22 +337,26 @@ int CHudMOTD :: Draw( float fTime )
 	Layout l;
 	CalcLayout( l );
 
-	// браузер создаём лениво; при смене разрешения пересоздаём
-	if( !m_bBrowserCreated || m_iBrowserW != l.bw || m_iBrowserH != l.bh )
+	// resolution changed: resize the browser, the page stays loaded
+	if( m_iBrowserW != l.bw || m_iBrowserH != l.bh )
 	{
-		CSW_SetFocus( false );
-		CSW_Destroy();
-		CSW_Create( l.bw, l.bh, m_szUrl.c_str() );
+		CSW_Resize( l.bw, l.bh );
 		m_iBrowserW = l.bw;
 		m_iBrowserH = l.bh;
-		m_bBrowserCreated = true;
-		m_bFocused = false;
 	}
 
-	// рамка
+	if( memcmp( &l, &m_touchLayout, sizeof( Layout ) ) != 0 )
+		UpdateTouch( l );
+
+	// hold-to-scroll (+forward / +back from the touch buttons)
+	const int dir = ( ( m_iButtons & IN_FORWARD ) ? 1 : 0 ) - ( ( m_iButtons & IN_BACK ) ? 1 : 0 );
+	if( dir )
+		CSW_Scroll( dir * MOTD_SCROLL_SPEED * (float)gHUD.m_flTimeDelta ); // positive = scroll up
+
+	// window frame
 	DrawUtils::DrawRectangle( l.px, l.py, l.pw, l.ph );
 
-	// кнопка OK
+	// OK button
 	DrawUtils::DrawRectangle( l.btnX, l.btnY, MOTD_BTN_W, MOTD_BTN_H );
 
 	int tw = gHUD.GetCharWidth( 'O' ) + gHUD.GetCharWidth( 'K' );
@@ -294,27 +368,30 @@ int CHudMOTD :: Draw( float fTime )
 	else
 		DrawUtils::DrawHudString( tx, ty, ScreenWidth, "OK", 255, 180, 0 );
 
-	// курсор: опрашиваем каждый кадр и пересылаем в страницу
-	int mx, my;
-	if( MotdGetMouse( mx, my ) )
-		CSW_MouseMove( mx, my );
-
-	// страница
-	CSW_Draw( l.bw, l.bh, l.bx, l.by );
-
-	// фокус и свободная мышь - после первого CSW_Draw (уже известны rx1..ry2)
-	if( !m_bFocused )
+	// scroll buttons (touch devices only, desktop has the mouse wheel)
+	if( g_iMobileAPIVersion )
 	{
-		CSW_SetFocus( true );
-		MotdSetMouseVisible( true );
-		m_bMouseFree = true;
-		m_bFocused = true;
+		DrawUtils::DrawRectangle( l.scrUpX,   l.btnY, MOTD_SCR_W, MOTD_BTN_H );
+		DrawUtils::DrawRectangle( l.scrDownX, l.btnY, MOTD_SCR_W, MOTD_BTN_H );
+
+		const int sty = l.btnY + ( MOTD_BTN_H - MOTD_TEXT_H ) / 2;
+		DrawUtils::DrawHudString( l.scrUpX   + ( MOTD_SCR_W - DrawUtils::HudStringLen( "Up" ) ) / 2, sty, ScreenWidth, "Up", 255, 180, 0 );
+		DrawUtils::DrawHudString( l.scrDownX + ( MOTD_SCR_W - DrawUtils::HudStringLen( "Dn" ) ) / 2, sty, ScreenWidth, "Dn", 255, 180, 0 );
 	}
+
+	// the real cursor is forwarded to the page every frame
+	int mx, my;
+	gEngfuncs.GetMousePosition( &mx, &my );
+	CSW_MouseMove( mx, my );
+
+	// page
+	CSW_Draw( l.bw, l.bh, l.bx, l.by );
 #endif
 
 	return 1;
 }
 
+// ------------------------------------------------------------------ server message
 int CHudMOTD :: MsgFunc_MOTD( const char *pszName, int iSize, void *pbuf )
 {
 	if( cl_motd_hide->value )
@@ -330,19 +407,18 @@ int CHudMOTD :: MsgFunc_MOTD( const char *pszName, int iSize, void *pbuf )
 #ifdef _CSWEB_ENABLE
 	if( is_finished )
 	{
-		const char *s = m_szMOTD.String();
-		while( *s == ' ' || *s == '\t' || *s == '\r' || *s == '\n' )
-			s++;
+		CUtlString head( m_szMOTD );
+		head.TrimWhitespace();
 
-		if( StartsWithNoCase( s, "http://" ) || StartsWithNoCase( s, "https://" ) )
-			m_szUrl = s;                                        // прямой URL
-		else if( *s == '<' )
-			m_szUrl = MakeDataUrl( m_szMOTD.String() );         // сырой HTML
+		CUtlString url;
+		if( head.BStartsWithCaseless( "http://" ) || head.BStartsWithCaseless( "https://" ) )
+			url = head;                                          // direct URL
+		else if( head.String()[0] == '<' )
+			url = MakeDataUrl( m_szMOTD );                       // raw HTML
 		else
-			m_szUrl = MakeDataUrl( TextToHtml( m_szMOTD.String() ) ); // обычный текст
-		
-		m_iFlags |= HUD_DRAW;
-		m_bShow = true;
+			url = MakeDataUrl( TextToHtml( m_szMOTD.String() ) ); // plain text
+
+		CreateBrowser( url.String() );
 	}
 #endif
 	return 1;

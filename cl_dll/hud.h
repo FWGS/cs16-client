@@ -346,29 +346,34 @@ public:
     void Scroll( int dir );
     void Scroll( float amount );
     bool KeyEvent( int down, int keynum );
+    bool CreateBrowser( const char *url );
+	void HandleButtonsDown( int ButtonPressed );
+    void HandleButtonsUp( int ButtonPressed );
 
     float scroll;
     bool m_bShow;
     cvar_t *cl_motd_hide;
-    std::string m_szUrl;
 
 protected:
     struct Layout
     {
         int px, py, pw, ph;     // window
         int bx, by, bw, bh;     // browser frame
-        int btnX, btnY;         // button
+        int btnX, btnY;         // OK button
+        int scrUpX, scrDownX;   // scroll buttons (mobile), y = btnY
     };
 
+	void UpdateTouch( const Layout &l );
     void CalcLayout( Layout &l ) const;
     bool IsOverButton( const Layout &l ) const;
 
+    int  m_iTouchX, m_iTouchY;
+	int  m_iButtons; 
+    int  m_iBrowserW, m_iBrowserH;
+	Layout m_touchLayout;       // layout the touch buttons were created for
     static int MOTD_DISPLAY_TIME;
     CUtlString m_szMOTD;
-    bool m_bBrowserCreated;
-    bool m_bFocused;
-	bool m_bMouseFree;
-    int  m_iBrowserW, m_iBrowserH;
+    CUtlString m_szUrl;
 };
 
 

@@ -399,24 +399,28 @@ void IN_ForwardDown(void)
 {
 	KeyDown(&in_forward);
 	gHUD.m_Spectator.HandleButtonsDown( IN_FORWARD );
+	gHUD.m_MOTD.HandleButtonsDown( IN_FORWARD );
 }
 
 void IN_ForwardUp(void)
 {
 	KeyUp(&in_forward);
 	gHUD.m_Spectator.HandleButtonsUp( IN_FORWARD );
+	gHUD.m_MOTD.HandleButtonsUp( IN_FORWARD );
 }
 
 void IN_BackDown(void)
 {
 	KeyDown(&in_back);
 	gHUD.m_Spectator.HandleButtonsDown( IN_BACK );
+	gHUD.m_MOTD.HandleButtonsDown( IN_BACK );
 }
 
 void IN_BackUp(void)
 {
 	KeyUp(&in_back);
 	gHUD.m_Spectator.HandleButtonsUp( IN_BACK );
+	gHUD.m_MOTD.HandleButtonsUp( IN_BACK );
 }
 void IN_LookupDown(void) {KeyDown(&in_lookup);}
 void IN_LookupUp(void) {KeyUp(&in_lookup);}
@@ -492,11 +496,13 @@ void IN_AttackDown(void)
 {
 	KeyDown( &in_attack );
 	gHUD.m_Spectator.HandleButtonsDown( IN_ATTACK );
+	gHUD.m_MOTD.HandleButtonsDown( IN_ATTACK );
 }
 
 void IN_AttackUp(void)
 {
 	KeyUp( &in_attack );
+	gHUD.m_MOTD.HandleButtonsUp( IN_ATTACK );
 	in_cancel = 0;
 }
 
@@ -793,12 +799,12 @@ int CL_ButtonBits( int bResetState )
 		bits |= IN_JUMP;
 	}
 
-	if ( in_forward.state & 3 )
+	if ( ( in_forward.state & 3 ) && !gHUD.m_MOTD.m_bShow )
 	{
 		bits |= IN_FORWARD;
 	}
 	
-	if (in_back.state & 3)
+	if ( ( in_back.state & 3 ) && !gHUD.m_MOTD.m_bShow )
 	{
 		bits |= IN_BACK;
 	}

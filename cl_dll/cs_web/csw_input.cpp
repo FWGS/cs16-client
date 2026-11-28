@@ -32,13 +32,6 @@ static bool CursorToPage( float &px, float &py )
     return ToPage( (float)g.lastMx, (float)g.lastMy, px, py );
 }
 
-static void Wheel( float dy )
-{
-    float px, py;
-    if( CursorToPage( px, py ) )
-        g.api.wheel( g.view, 0.0f, dy, px, py );
-}
-
 // Numbering is shared with special_key() in rust/src/input.rs.
 static int SpecialKey( int key )
 {
@@ -115,6 +108,14 @@ void CSW_MouseButton( int button, bool down )
         g.api.mouse_button( g.view, button, down ? 1 : 0, px, py );
 }
 
+void CSW_Scroll( float dy )
+{
+    if( !g.view || !g.texW )
+        return;
+
+    g.api.wheel( g.view, 0.0f, dy, (float)g.texW * 0.5f, (float)g.texH * 0.5f );
+}
+
 bool CSW_Key( int down, int key )
 {
     if( key == K_SHIFT ) g.shift = down != 0;
@@ -135,7 +136,7 @@ bool CSW_Key( int down, int key )
     if( key == K_MWHEELUP || key == K_MWHEELDOWN )
     {
         if( down )
-            Wheel( key == K_MWHEELUP ? 15.0f : -15.0f ); // positive = scroll up
+            CSW_Scroll( key == K_MWHEELUP ? 15.0f : -15.0f ); // positive = scroll up
         return true;
     }
 

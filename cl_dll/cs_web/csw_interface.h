@@ -12,4 +12,5 @@ void CSW_Resize( int w, int h );
 bool CSW_Key( int down, int keynum );
 void CSW_MouseMove( int sx, int sy );
 void CSW_MouseButton( int button, bool down );
+void CSW_Scroll( float dy );
 void CSW_LoadURL( const char *url );
